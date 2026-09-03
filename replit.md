@@ -38,10 +38,12 @@ An EU-focused cold-rolled steel cost forecaster that combines market benchmarks,
 ## Product
 
 - Dashboard for market snapshot, baseline cost per tonne, signal confidence, country selection, and editable scenario assumptions
-- Cost anatomy showing modeled contributions from raw materials, energy, conversion/labor, and freight/other
+- HRC-dominant cost anatomy with conversion materials, utilities/carbon, labor, logistics, and overhead/margin
+- Inputs for zinc, pickling acid, rolling oils, work rolls, water/wastewater, compressed air/inert gases, EUA, free allocation, Brent, FX, and freight
 - 1–12 week forecast with uncertainty bands and last-30-day forecast error
-- Assumptions and methodology page with source freshness and accuracy disclaimer
-- CSV forecast export
+- Assumptions and methodology page with source freshness, embedded upstream-input rules, and accuracy disclaimer
+- Session-aware live indicators with source, last fetched time, cadence, and next expected update
+- CSV export and print-to-PDF report
 
 ## User preferences
 
@@ -51,6 +53,7 @@ No standing preferences recorded.
 
 - API routes are mounted under `/api`; the frontend uses generated hooks rather than raw requests.
 - Forecast and overview endpoints fall back to explicit cached or estimated values if the Frankfurter request is unavailable.
+- Live indicators do not turn active because time passed; they require a newer source timestamp than the current session start.
 
 ## Pointers
 

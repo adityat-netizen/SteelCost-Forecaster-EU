@@ -19,4 +19,5 @@ export * from './marketAssumptions';
 export * from './marketForecast';
 export * from './marketForecastBacktest';
 export * from './marketInput';
+export * from './marketInputSourceRefreshInterval';
 export * from './marketOverview';

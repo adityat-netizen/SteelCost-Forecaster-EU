@@ -18,6 +18,7 @@ import {
   Gauge,
   Info,
   Menu,
+  Printer,
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
@@ -30,6 +31,7 @@ import {
   getHealthCheckQueryKey,
   type MarketAssumptions,
   type MarketForecast,
+  type MarketInput,
   type MarketOverview,
   useGetMarketAssumptions,
   useGetMarketForecast,
@@ -41,19 +43,38 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
+import { LiveIndicator } from '@/components/live-indicator';
 
 const queryClient = new QueryClient();
 const COUNTRIES = ['Germany', 'France', 'Italy', 'Poland', 'Spain', 'Netherlands', 'Belgium'] as const;
 type Country = (typeof COUNTRIES)[number];
-type ScenarioValues = { energy: number; labor: number; freight: number };
+type ScenarioValues = { energy: number; laborShare: number; freight: number; freeAllocation: number };
+
+function fallbackInput(
+  key: string,
+  label: string,
+  value: number,
+  unit: string,
+  freshness: MarketInput['freshness'],
+  source: string,
+  sourceRefreshInterval: MarketInput['sourceRefreshInterval'],
+  lastFetchedAt: string,
+): MarketInput {
+  const last = new Date(lastFetchedAt);
+  const next = new Date(last);
+  if (sourceRefreshInterval === 'daily') next.setDate(next.getDate() + 1);
+  if (sourceRefreshInterval === 'weekly') next.setDate(next.getDate() + 7);
+  if (sourceRefreshInterval === 'monthly') next.setMonth(next.getMonth() + 1);
+  return { key, label, value, unit, freshness, source, updatedAt: lastFetchedAt, lastFetchedAt, sourceRefreshInterval, nextExpectedUpdate: next.toISOString() };
+}
 
 const FALLBACK_OVERVIEW: MarketOverview = {
   country: 'Germany',
   asOf: '2025-02-14T08:30:00.000Z',
   baseCostPerTon: 1048,
   confidenceScore: 87,
-  liveInputCount: 4,
-  totalInputCount: 5,
+  liveInputCount: 1,
+  totalInputCount: 14,
   adjustment: {
     country: 'Germany',
     electricityMultiplier: 1.08,
@@ -62,11 +83,20 @@ const FALLBACK_OVERVIEW: MarketOverview = {
     subsidyNote: 'No active production subsidy applied',
   },
   inputs: [
-    { key: 'scrap', label: 'EAF scrap index', value: 368, unit: '€/t', freshness: 'live', source: 'EUROFER / Fastmarkets', updatedAt: '2025-02-14T07:55:00.000Z' },
-    { key: 'electricity', label: 'Industrial electricity', value: 86.4, unit: '€/MWh', freshness: 'live', source: 'ENTSO-E day-ahead', updatedAt: '2025-02-14T08:00:00.000Z' },
-    { key: 'gas', label: 'Natural gas', value: 31.2, unit: '€/MWh', freshness: 'live', source: 'ICE TTF', updatedAt: '2025-02-14T08:00:00.000Z' },
-    { key: 'carbon', label: 'EU ETS allowance', value: 74.8, unit: '€/tCO₂', freshness: 'cached', source: 'ICE EUA settlement', updatedAt: '2025-02-13T17:35:00.000Z' },
-    { key: 'labor', label: 'Plant labor index', value: 112.6, unit: 'index', freshness: 'estimated', source: 'Eurostat 2024 Q4', updatedAt: '2025-01-31T09:10:00.000Z' },
+    fallbackInput('hrc', 'North Europe HRC', 612, '€/t', 'cached', 'EU HRC benchmark · Kallanish / MEPS proxy', 'weekly', '2026-09-01T06:00:00.000Z'),
+    fallbackInput('zinc', 'LME zinc', 2680, '$/t', 'estimated', 'LME delayed-price proxy', 'daily', '2026-09-02T06:00:00.000Z'),
+    fallbackInput('picklingAcid', 'Pickling acid', 38, '€/t', 'estimated', 'Regional chemical reference', 'monthly', '2026-09-01T06:00:00.000Z'),
+    fallbackInput('rollingOil', 'Rolling oils & emulsions', 11, '€/t', 'estimated', 'Mill consumables reference', 'monthly', '2026-09-01T06:00:00.000Z'),
+    fallbackInput('workRolls', 'Refractories & work rolls', 16, '€/t', 'estimated', 'Maintenance cost reference', 'monthly', '2026-09-01T06:00:00.000Z'),
+    fallbackInput('electricity', 'Industrial electricity', 86, '€/MWh', 'estimated', 'EU day-ahead reference · ENTSO-E proxy', 'daily', '2026-09-03T06:00:00.000Z'),
+    fallbackInput('ttf', 'TTF natural gas', 34, '€/MWh', 'estimated', 'TTF weekly reference', 'weekly', '2026-09-01T06:00:00.000Z'),
+    fallbackInput('water', 'Water & wastewater', 3.5, '€/m³', 'estimated', 'Industrial utility reference', 'monthly', '2026-09-01T06:00:00.000Z'),
+    fallbackInput('compressedAir', 'Compressed air & inert gases', 9, '€/t', 'estimated', 'Plant utility reference', 'monthly', '2026-09-01T06:00:00.000Z'),
+    fallbackInput('carbon', 'EU ETS allowance', 84, '€/tCO₂', 'estimated', 'EUA futures-tracked proxy', 'daily', '2026-09-03T06:00:00.000Z'),
+    fallbackInput('eurUsd', 'EUR / USD', 1.17, '$/€', 'live', 'Frankfurter API', 'daily', '2026-09-03T06:00:00.000Z'),
+    fallbackInput('labor', 'Manufacturing labor', 38.4, '€/h', 'cached', 'Eurostat manufacturing reference', 'monthly', '2026-09-01T06:00:00.000Z'),
+    fallbackInput('freight', 'EU corridor freight', 42, '€/t', 'estimated', 'EU rail / truck blend', 'monthly', '2026-09-01T06:00:00.000Z'),
+    fallbackInput('brent', 'Brent crude', 76, '$/bbl', 'estimated', 'EIA / Alpha Vantage proxy', 'daily', '2026-09-03T06:00:00.000Z'),
   ],
 };
 
@@ -221,7 +251,7 @@ function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-function PageIntro({ onExport, exported }: { onExport: () => void; exported: boolean }) {
+function PageIntro({ onExportCsv, onExportPdf, exported }: { onExportCsv: () => void; onExportPdf: () => void; exported: boolean }) {
   return (
     <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end">
       <div>
@@ -229,14 +259,19 @@ function PageIntro({ onExport, exported }: { onExport: () => void; exported: boo
         <h1 className="font-display text-[clamp(2rem,4vw,3.35rem)] font-bold leading-[.98] tracking-[-.055em] text-foreground">Steel cost<br className="hidden sm:block" /> forecaster<span className="text-primary">.</span></h1>
         <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">A clear view of what your next tonne could cost — grounded in current EU market signals and transparent assumptions.</p>
       </div>
-      <button data-testid="button-export-forecast" onClick={onExport} className="group inline-flex h-10 items-center justify-center gap-2 self-start rounded-sm bg-primary px-4 text-xs font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:bg-primary/90 md:self-end">
-        <Download size={15} /> {exported ? 'Exported to CSV' : 'Export forecast'}
-      </button>
+      <div className="print-hide flex flex-wrap gap-2 self-start md:self-end">
+        <button data-testid="button-export-pdf" onClick={onExportPdf} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-card px-4 text-xs font-bold text-foreground shadow-sm hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary">
+          <Printer size={15} /> Save PDF
+        </button>
+        <button data-testid="button-export-csv" onClick={onExportCsv} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm bg-primary px-4 text-xs font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:bg-primary/90">
+          <Download size={15} /> {exported ? 'CSV saved' : 'Export CSV'}
+        </button>
+      </div>
     </div>
   );
 }
 
-function MarketInputPanel({ overview }: { overview: MarketOverview }) {
+function MarketInputPanel({ overview, sessionStartedAt }: { overview: MarketOverview; sessionStartedAt: number }) {
   return (
     <section className="panel appear overflow-hidden">
       <div className="panel-header flex items-center justify-between px-5 py-4">
@@ -248,7 +283,7 @@ function MarketInputPanel({ overview }: { overview: MarketOverview }) {
           <div data-testid={`row-market-input-${input.key}`} key={input.key} className="group grid grid-cols-[1fr_auto] gap-3 px-5 py-3.5 sm:grid-cols-[1fr_auto_auto] sm:items-center">
             <div><div className="text-sm font-medium text-foreground">{input.label}</div><div className="mt-1 text-[11px] text-muted-foreground">{input.source} · updated {formatUpdated(input.updatedAt)}</div></div>
             <div data-testid={`text-market-value-${input.key}`} className="data-mono text-right text-sm font-semibold text-foreground">{number.format(input.value)} <span className="text-[10px] font-normal text-muted-foreground">{input.unit}</span></div>
-            <div className="col-span-2 sm:col-span-1 sm:justify-self-end"><FreshnessPill freshness={input.freshness} /></div>
+            <div className="col-span-2 flex items-center justify-between gap-2 sm:col-span-1 sm:justify-self-end"><FreshnessPill freshness={input.freshness} /><LiveIndicator input={input} sessionStartedAt={sessionStartedAt} /></div>
           </div>
         ))}
       </div>
@@ -258,7 +293,7 @@ function MarketInputPanel({ overview }: { overview: MarketOverview }) {
 }
 
 function ScenarioPanel({ overview, country, setCountry, onApply }: { overview: MarketOverview; country: Country; setCountry: (country: Country) => void; onApply: (values: ScenarioValues) => void }) {
-  const [assumptions, setAssumptions] = useState<ScenarioValues>({ energy: 86.4, labor: 112.6, freight: 42 });
+  const [assumptions, setAssumptions] = useState<ScenarioValues>({ energy: 86.4, laborShare: 7, freight: 42, freeAllocation: 85 });
   const [saved, setSaved] = useState(false);
   const update = (key: keyof typeof assumptions, value: string) => { setAssumptions((previous) => ({ ...previous, [key]: Number(value) || 0 })); setSaved(false); };
   return (
@@ -278,17 +313,21 @@ function ScenarioPanel({ overview, country, setCountry, onApply }: { overview: M
           </div>
           <p data-testid="text-country-adjustment" className="mt-2 text-[11px] text-muted-foreground">Country factors: electricity <span className="font-mono text-foreground">{overview.adjustment.electricityMultiplier.toFixed(2)}×</span> · labour <span className="font-mono text-foreground">{overview.adjustment.laborMultiplier.toFixed(2)}×</span> · freight <span className="font-mono text-foreground">{overview.adjustment.freightMultiplier.toFixed(2)}×</span></p>
         </div>
-        <div className="border-t border-border/70 pt-5">
+          <div className="border-t border-border/70 pt-5">
           <div className="flex items-center justify-between"><span className="label-caps text-muted-foreground">Editable assumptions</span><span className="text-[10px] text-muted-foreground">Scenario only</span></div>
           <div className="mt-3 space-y-3">
             {[
               { key: 'energy' as const, label: 'Power price', unit: '€/MWh', hint: 'Current industrial rate' },
-              { key: 'labor' as const, label: 'Labour index', unit: 'index', hint: 'Plant-specific override' },
+              { key: 'laborShare' as const, label: 'Labour share', unit: '%', hint: 'EU cold rolling · 5–12%', min: 5, max: 12 },
               { key: 'freight' as const, label: 'Inbound freight', unit: '€/t', hint: 'Delivered to plant' },
+              { key: 'freeAllocation' as const, label: 'Free carbon allocation', unit: '%', hint: 'Decrease to model CBAM phase-down', min: 0, max: 100 },
             ].map((item) => (
               <label key={item.key} className="grid grid-cols-[1fr_112px] items-center gap-3">
                 <span><span className="block text-xs font-medium">{item.label}</span><span className="mt-0.5 block text-[10px] text-muted-foreground">{item.hint}</span></span>
-                <span className="relative"><input data-testid={`input-assumption-${item.key}`} aria-label={item.label} type="number" step="0.1" value={assumptions[item.key]} onChange={(event) => update(item.key, event.target.value)} className="data-mono w-full rounded-sm border border-input bg-background px-2.5 py-2 pr-12 text-right text-xs text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" /><span className="pointer-events-none absolute right-2 top-2 text-[10px] text-muted-foreground">{item.unit}</span></span>
+                <span className="relative">
+                  <input data-testid={`input-assumption-${item.key}`} aria-label={item.label} type={item.min !== undefined ? 'range' : 'number'} min={item.min} max={item.max} step={item.min !== undefined ? 1 : 0.1} value={assumptions[item.key]} onChange={(event) => update(item.key, event.target.value)} className={item.min !== undefined ? 'mt-2 w-full accent-primary' : 'data-mono w-full rounded-sm border border-input bg-background px-2.5 py-2 pr-12 text-right text-xs text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20'} />
+                  <span className="pointer-events-none absolute right-2 top-0 text-[10px] text-muted-foreground">{number.format(assumptions[item.key])}{item.unit}</span>
+                </span>
               </label>
             ))}
           </div>
@@ -302,28 +341,32 @@ function ScenarioPanel({ overview, country, setCountry, onApply }: { overview: M
   );
 }
 
-function ContributionPanel({ overview, scenarioCost }: { overview: MarketOverview; scenarioCost?: number }) {
+function ContributionPanel({ overview, scenarioCost, sessionStartedAt }: { overview: MarketOverview; scenarioCost?: number; sessionStartedAt: number }) {
   const total = scenarioCost ?? overview.baseCostPerTon;
   const parts = [
-    { label: 'Raw material', value: Math.round(total * .53), color: 'bg-primary' },
-    { label: 'Energy', value: Math.round(total * .19), color: 'bg-accent' },
-    { label: 'Conversion & labour', value: Math.round(total * .16), color: 'bg-foreground/55' },
-    { label: 'Freight & other', value: Math.round(total * .12), color: 'bg-muted-foreground/45' },
+    { label: 'HRC feedstock', value: Math.round(total * .74), color: 'bg-primary' },
+    { label: 'Conversion materials', value: Math.round(total * .04), color: 'bg-primary/60' },
+    { label: 'Utilities & carbon', value: Math.round(total * .12), color: 'bg-accent' },
+    { label: 'Labour', value: Math.round(total * .06), color: 'bg-foreground/55' },
+    { label: 'Logistics', value: Math.round(total * .03), color: 'bg-muted-foreground/55' },
+    { label: 'Overhead + margin', value: Math.round(total * .01), color: 'bg-muted-foreground/35' },
   ];
+  const signalInputs = overview.inputs.filter((input) => ['hrc', 'zinc', 'electricity', 'carbon'].includes(input.key));
   return (
     <section className="panel appear appear-delay-2 overflow-hidden">
       <div className="panel-header flex items-center justify-between px-5 py-4"><div><div className="label-caps text-muted-foreground">Cost anatomy</div><h2 className="mt-1 font-display text-base font-semibold">What drives the tonne</h2></div><BarChart3 size={17} className="text-primary" /></div>
       <div className="p-5">
         <div className="flex items-end justify-between"><div><div className="label-caps text-muted-foreground">Estimated {scenarioCost ? 'scenario' : 'base'} cost</div><div data-testid="text-base-cost" className="mt-1 data-mono text-3xl font-semibold tracking-[-.05em]">{euro.format(total)}<span className="ml-1 text-sm font-normal tracking-normal text-muted-foreground">/ t</span></div></div><div className="text-right text-xs text-muted-foreground">{scenarioCost ? 'with overrides' : 'before scenario'}<br /><span className="font-mono text-foreground">{overview.country}</span></div></div>
-        <div className="mt-6 flex h-3 overflow-hidden rounded-[2px] bg-secondary">{parts.map((part) => <div key={part.label} style={{ width: `${(part.value / total) * 100}%` }} className={`${part.color} transition-all duration-300`} />)}</div>
+         <div className="mt-6 flex h-3 overflow-hidden rounded-[2px] bg-secondary">{parts.map((part) => <div key={part.label} style={{ width: `${(part.value / total) * 100}%` }} className={`${part.color} transition-all duration-300`} />)}</div>
         <div className="mt-5 space-y-3">{parts.map((part) => <div data-testid={`row-cost-contribution-${part.label.toLowerCase().replaceAll(' ', '-')}`} key={part.label} className="flex items-center justify-between text-xs"><span className="flex items-center gap-2.5 text-muted-foreground"><span className={`h-2 w-2 rounded-[1px] ${part.color}`} />{part.label}</span><span className="data-mono font-medium text-foreground">{euro.format(part.value)} <span className="ml-1 text-[10px] text-muted-foreground">{Math.round((part.value / total) * 100)}%</span></span></div>)}</div>
-        <div className="mt-6 border-t border-border/70 pt-4 text-[11px] leading-5 text-muted-foreground">The mix is a modelled view of cost contribution, not an accounting allocation. Country multipliers are applied after the regional baseline.</div>
+         <div className="mt-6 border-t border-border/70 pt-4"><div className="mb-2 label-caps text-muted-foreground">Signals used in this view</div><div className="flex flex-wrap gap-2">{signalInputs.map((input) => <LiveIndicator key={input.key} input={input} sessionStartedAt={sessionStartedAt} />)}</div></div>
+         <div className="mt-4 text-[11px] leading-5 text-muted-foreground">HRC is intentionally dominant for a pure cold-rolling route. Iron ore and met coal remain embedded in purchased HRC here and are not double-counted.</div>
       </div>
     </section>
   );
 }
 
-function ForecastChart({ forecast }: { forecast: MarketForecast }) {
+function ForecastChart({ forecast, inputs, sessionStartedAt }: { forecast: MarketForecast; inputs: MarketInput[]; sessionStartedAt: number }) {
   const chart = useMemo(() => {
     const points = forecast.points.length ? forecast.points : FALLBACK_FORECAST.points;
     const values = points.flatMap((point) => [point.lower, point.upper]);
@@ -338,9 +381,9 @@ function ForecastChart({ forecast }: { forecast: MarketForecast }) {
   }, [forecast]);
   return (
     <section className="panel overflow-hidden">
-      <div className="panel-header flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Directional outlook</div><h2 className="mt-1 font-display text-base font-semibold">Cost forecast with uncertainty</h2></div><div className="flex items-center gap-4 text-[11px] text-muted-foreground"><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-primary" />Expected</span><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-accent/20" />Range</span></div></div>
+       <div className="panel-header flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Directional outlook</div><h2 className="mt-1 font-display text-base font-semibold">Cost forecast with uncertainty</h2></div><div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground"><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-primary" />Expected</span><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-accent/20" />Range</span>{inputs.filter((input) => ['hrc', 'electricity', 'carbon'].includes(input.key)).map((input) => <LiveIndicator key={input.key} input={input} sessionStartedAt={sessionStartedAt} />)}</div></div>
       <div className="p-3 pt-5 sm:p-5">
-        <div className="mb-2 flex items-start justify-between"><div><div className="data-mono text-2xl font-semibold">{euro.format(chart.points[0]?.costPerTon ?? 0)}<span className="ml-1 text-xs font-normal text-muted-foreground">/ t today</span></div><div className="mt-1 flex items-center gap-1 text-xs text-destructive"><ArrowUpRight size={13} />{chart.points.length > 1 ? `${euro.format((chart.points.at(-1)?.costPerTon ?? 0) - (chart.points[0]?.costPerTon ?? 0))} by horizon` : 'Awaiting horizon'}</div></div><div className="rounded-sm border border-border bg-secondary/45 px-3 py-2 text-right"><div className="label-caps text-muted-foreground">Backtest</div><div data-testid="text-backtest-score" className="data-mono mt-1 text-sm font-semibold text-accent">{forecast.backtest.score}<span className="text-[10px] font-normal text-muted-foreground"> / 100</span></div></div></div>
+         <div className="mb-2 flex items-start justify-between"><div><div className="data-mono text-2xl font-semibold">{euro.format(chart.points[0]?.costPerTon ?? 0)}<span className="ml-1 text-xs font-normal text-muted-foreground">/ t today</span></div><div className="mt-1 flex items-center gap-1 text-xs text-destructive"><ArrowUpRight size={13} />{chart.points.length > 1 ? `${euro.format((chart.points.at(-1)?.costPerTon ?? 0) - (chart.points[0]?.costPerTon ?? 0))} by horizon` : 'Awaiting horizon'}</div></div><div className="rounded-sm border border-border bg-secondary/45 px-3 py-2 text-right"><div className="label-caps text-muted-foreground">Backtest error</div><div data-testid="text-backtest-score" className="data-mono mt-1 text-sm font-semibold text-accent">{forecast.backtest.score}<span className="text-[10px] font-normal text-muted-foreground">%</span></div></div></div>
         <div className="overflow-x-auto"><svg data-testid="chart-forecast" className="mt-3 min-w-[640px]" viewBox="0 0 760 280" role="img" aria-label="Forecast cost chart with uncertainty range">
           <g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1="24" y1="32" x2="736" y2="32" /><line x1="24" y1="98" x2="736" y2="98" /><line x1="24" y1="164" x2="736" y2="164" /><line x1="24" y1="228" x2="736" y2="228" /></g>
           <polygon points={chart.band} fill="hsl(var(--accent) / .13)" />
@@ -366,6 +409,28 @@ function DecisionPanel({ overview }: { overview: MarketOverview }) {
   );
 }
 
+function ProsConsPanel() {
+  return (
+    <section className="panel overflow-hidden">
+      <div className="panel-header px-5 py-4"><div className="label-caps text-muted-foreground">Manufacturer view</div><h2 className="mt-1 font-display text-base font-semibold">Why cold rolling still wins — and where it bites</h2></div>
+      <div className="grid divide-y divide-border/70 md:grid-cols-2 md:divide-x md:divide-y-0">
+        <div className="p-5">
+          <div className="text-xs font-semibold text-accent">Upside</div>
+          <ul className="mt-4 space-y-3 text-sm leading-5 text-muted-foreground">
+            {['Better surface finish and tighter tolerances', 'Higher strength through strain hardening', 'Strong demand from automotive and appliances', 'Higher margin potential than hot-rolled products'].map((item, index) => <li data-testid={`text-pro-${index}`} key={item} className="flex gap-3"><Check size={15} className="mt-0.5 shrink-0 text-accent" />{item}</li>)}
+          </ul>
+        </div>
+        <div className="p-5">
+          <div className="text-xs font-semibold text-primary">Trade-offs</div>
+          <ul className="mt-4 space-y-3 text-sm leading-5 text-muted-foreground">
+            {['High capital investment and recurring work-roll maintenance', 'Energy-intensive pickling, rolling, and annealing lines', 'Sensitive to HRC, zinc, gas, power, and carbon swings', 'Trade tariffs and environmental compliance costs are rising'].map((item, index) => <li data-testid={`text-con-${index}`} key={item} className="flex gap-3"><CircleHelp size={15} className="mt-0.5 shrink-0 text-primary" />{item}</li>)}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ConfidenceCard({ overview }: { overview: MarketOverview }) {
   const circumference = 2 * Math.PI * 29;
   return (
@@ -381,39 +446,41 @@ function Home() {
   const [horizon, setHorizon] = useState(8);
   const [scenario, setScenario] = useState<ScenarioValues | null>(null);
   const [exported, setExported] = useState(false);
-  const overviewQuery = useGetMarketOverview({ country }, { query: { queryKey: getGetMarketOverviewQueryKey({ country }), staleTime: 300_000 } });
-  const forecastQuery = useGetMarketForecast({ country, horizon }, { query: { queryKey: getGetMarketForecastQueryKey({ country, horizon }), staleTime: 300_000 } });
+  const [sessionStartedAt] = useState(() => Date.now());
+  const overviewQuery = useGetMarketOverview({ country }, { query: { queryKey: getGetMarketOverviewQueryKey({ country }), staleTime: 300_000, refetchInterval: 60_000 } });
+  const forecastQuery = useGetMarketForecast({ country, horizon }, { query: { queryKey: getGetMarketForecastQueryKey({ country, horizon }), staleTime: 300_000, refetchInterval: 60_000 } });
   const overview = overviewQuery.data ?? (overviewQuery.isLoading ? undefined : { ...FALLBACK_OVERVIEW, country, adjustment: { ...FALLBACK_OVERVIEW.adjustment, country } });
   const forecast = forecastQuery.data ?? { ...FALLBACK_FORECAST, country, horizon };
-  const scenarioCost = overview && scenario ? overview.baseCostPerTon + (scenario.energy - 86.4) * 3 + (scenario.labor - 112.6) * 2 + (scenario.freight - 42) : undefined;
+  const scenarioCost = overview && scenario ? Math.round(overview.baseCostPerTon + (scenario.energy - 86.4) * 1.2 + (scenario.laborShare - 7) * overview.baseCostPerTon * 0.01 + (scenario.freight - 42) * 0.5 + (85 - scenario.freeAllocation) * 0.45) : undefined;
   const forecastForChart = useMemo<MarketForecast>(() => {
     if (!scenarioCost || !overview) return forecast;
     const delta = scenarioCost - overview.baseCostPerTon;
     return { ...forecast, points: forecast.points.map((point) => ({ ...point, costPerTon: point.costPerTon + delta, lower: point.lower + delta, upper: point.upper + delta })) };
   }, [forecast, overview, scenarioCost]);
   const exportForecast = () => {
-    const rows = [['Country', 'Week', 'Expected cost (EUR/t)', 'Lower range', 'Upper range'], ...forecast.points.map((point) => [country, point.label, String(point.costPerTon), String(point.lower), String(point.upper)])];
+    const rows = [['Country', 'Week', 'Expected cost (EUR/t)', 'Lower range', 'Upper range'], ...forecastForChart.points.map((point) => [country, point.label, String(point.costPerTon), String(point.lower), String(point.upper)])];
     const blob = new Blob([rows.map((row) => row.join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url; anchor.download = `steelcost-${country.toLowerCase()}-${horizon}w.csv`; anchor.click(); URL.revokeObjectURL(url);
     setExported(true); window.setTimeout(() => setExported(false), 2400);
   };
+  const exportPdf = () => window.print();
   return (
     <>
-      <PageIntro onExport={exportForecast} exported={exported} />
+      <PageIntro onExportCsv={exportForecast} onExportPdf={exportPdf} exported={exported} />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr]">
         <div className="panel flex items-center justify-between bg-foreground p-5 text-background"><div><div className="label-caps text-background/55">Planning baseline</div><div data-testid="text-hero-cost" className="mt-2 data-mono text-3xl font-semibold tracking-[-.05em]">{overview ? euro.format(overview.baseCostPerTon) : <Skeleton className="h-9 w-28 bg-background/10" />}<span className="ml-1 text-xs font-normal tracking-normal text-background/55">/ metric tonne</span></div><div className="mt-2 text-[11px] text-background/55">Current {country} production scenario</div></div><div className="flex h-11 w-11 items-center justify-center rounded-sm bg-primary text-primary-foreground"><Factory size={21} /></div></div>
         {overview ? <ConfidenceCard overview={overview} /> : <div className="panel h-[112px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-32" /></div>}
         <div className="panel p-5"><div className="flex items-center justify-between"><div className="label-caps text-muted-foreground">Regional adjustment</div><span className="rounded-sm bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary">{country === 'Germany' ? 'BASE' : 'COUNTRY'}</span></div><div data-testid="text-regional-adjustment" className="mt-3 data-mono text-2xl font-semibold">{overview ? `${overview.adjustment.electricityMultiplier.toFixed(2)}×` : <Skeleton className="h-7 w-20" />}</div><div className="mt-1 text-[11px] text-muted-foreground">Electricity vs. EU baseline</div></div>
       </div>
-      {overviewQuery.isError && !overview ? <EmptyOrError error onRetry={() => overviewQuery.refetch()} /> : overview ? <div className="grid gap-5 xl:grid-cols-[minmax(270px,1.05fr)_minmax(270px,.95fr)_minmax(340px,1.5fr)]"><MarketInputPanel overview={overview} /><ScenarioPanel overview={overview} country={country} setCountry={(nextCountry) => { setCountry(nextCountry); setScenario(null); }} onApply={setScenario} /><ContributionPanel overview={overview} scenarioCost={scenarioCost} /></div> : <div className="grid gap-5 xl:grid-cols-3"><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /><Skeleton className="mt-8 h-4 w-full" /><Skeleton className="mt-4 h-4 w-4/5" /><Skeleton className="mt-4 h-4 w-11/12" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div></div>}
+      {overviewQuery.isError && !overview ? <EmptyOrError error onRetry={() => overviewQuery.refetch()} /> : overview ? <div className="grid gap-5 xl:grid-cols-[minmax(270px,1.05fr)_minmax(270px,.95fr)_minmax(340px,1.5fr)]"><MarketInputPanel overview={overview} sessionStartedAt={sessionStartedAt} /><ScenarioPanel overview={overview} country={country} setCountry={(nextCountry) => { setCountry(nextCountry); setScenario(null); }} onApply={setScenario} /><ContributionPanel overview={overview} scenarioCost={scenarioCost} sessionStartedAt={sessionStartedAt} /></div> : <div className="grid gap-5 xl:grid-cols-3"><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /><Skeleton className="mt-8 h-4 w-full" /><Skeleton className="mt-4 h-4 w-4/5" /><Skeleton className="mt-4 h-4 w-11/12" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div></div>}
       <div className="mt-5 flex flex-col gap-5">
         <div className="panel overflow-hidden">
           <div className="panel-header flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Planning horizon</div><h2 className="mt-1 font-display text-base font-semibold">Look ahead before you commit volume</h2></div><div data-testid="control-horizon" className="flex rounded-sm border border-border bg-secondary/55 p-1">{[4, 8, 12].map((item) => <button data-testid={`button-horizon-${item}`} key={item} onClick={() => setHorizon(item)} className={`rounded-sm px-3 py-1.5 font-mono text-[11px] ${horizon === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{item} weeks</button>)}</div></div>
-          {forecastQuery.isError ? <div className="p-5"><EmptyOrError error onRetry={() => forecastQuery.refetch()} /></div> : <ForecastChart forecast={forecastForChart} />}
+           {forecastQuery.isError ? <div className="p-5"><EmptyOrError error onRetry={() => forecastQuery.refetch()} /></div> : overview ? <ForecastChart forecast={forecastForChart} inputs={overview.inputs} sessionStartedAt={sessionStartedAt} /> : <div className="p-5"><Skeleton className="h-64 w-full" /></div>}
         </div>
-        {overview && <DecisionPanel overview={overview} />}
+         {overview && <><DecisionPanel overview={overview} /><ProsConsPanel /></>}
       </div>
     </>
   );
@@ -422,6 +489,8 @@ function Home() {
 function AssumptionsPage() {
   const assumptionsQuery = useGetMarketAssumptions({ query: { queryKey: getGetMarketAssumptionsQueryKey(), staleTime: 900_000 } });
   const assumptions = assumptionsQuery.data ?? (assumptionsQuery.isLoading ? undefined : FALLBACK_ASSUMPTIONS);
+  const liveSignalCount = assumptions?.items.filter((item) => item.status === 'live').length ?? 0;
+  const sourceCoverage = assumptions?.items.length ? Math.round((liveSignalCount / assumptions.items.length) * 100) : 0;
   return (
     <>
       <div className="mb-9 max-w-3xl"><div className="label-caps mb-3 flex items-center gap-2 text-accent"><span className="h-1.5 w-1.5 rounded-full bg-accent" />Model transparency</div><h1 className="font-display text-[clamp(2rem,4vw,3.35rem)] font-bold leading-[.98] tracking-[-.055em]">A forecast you<br />can interrogate<span className="text-primary">.</span></h1><p className="mt-5 max-w-2xl text-sm leading-6 text-muted-foreground">SteelCost makes its inputs, adjustments, and uncertainty visible by design. Use this page to understand what sits behind the number before it enters a sourcing decision.</p></div>
@@ -431,8 +500,8 @@ function AssumptionsPage() {
           <div className="divide-y divide-border/70">{assumptions.items.map((item, index) => <div data-testid={`row-assumption-${index}`} key={item.label} className="grid gap-3 px-5 py-5 md:grid-cols-[220px_1fr_145px] md:items-start"><div className="flex items-start gap-3"><span className="data-mono flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-secondary text-[10px] text-muted-foreground">{String(index + 1).padStart(2, '0')}</span><div className="text-sm font-semibold">{item.label}</div></div><div className="text-sm leading-6 text-muted-foreground">{item.detail}</div><div className="flex items-center justify-between gap-3 md:block md:text-right"><FreshnessPill freshness={item.status} /><div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground md:justify-end"><RefreshCw size={10} />{item.refresh}</div></div></div>)}</div>
         </section>
         <div className="grid gap-5 lg:grid-cols-[1.2fr_.8fr]">
-          <section className="panel p-5 sm:p-6"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-sm bg-primary/12 text-primary"><SlidersHorizontal size={17} /></div><div><div className="label-caps text-muted-foreground">How the number is built</div><h2 className="mt-1 font-display text-base font-semibold">Formula notes</h2></div></div><div className="mt-6 rounded-sm border border-border bg-secondary/45 p-4 font-mono text-xs leading-7 text-foreground"><span className="text-accent">delivered cost</span> = <span className="text-primary">scrap</span> + <span className="text-primary">energy</span> + <span className="text-primary">conversion</span><br /><span className="pl-[5.6rem]">+ freight − subsidy</span></div><div className="mt-5 grid gap-4 text-sm leading-6 text-muted-foreground sm:grid-cols-2"><p><span className="font-semibold text-foreground">Baseline.</span> A regional EAF route is used as the common starting point, then country factors reflect typical operating conditions.</p><p><span className="font-semibold text-foreground">Uncertainty.</span> The band expands with time and input volatility. It is a confidence range, not a guaranteed high/low.</p></div></section>
-          <section className="panel bg-foreground p-5 text-background sm:p-6"><div className="flex items-center justify-between"><div className="label-caps text-background/50">Source freshness</div><Activity size={16} className="text-primary" /></div><div className="mt-7 flex items-end gap-2"><div data-testid="text-live-source-count" className="data-mono text-5xl font-semibold tracking-[-.08em]">04</div><div className="mb-1 font-mono text-xs text-background/55">live signals</div></div><div className="mt-5 h-2 overflow-hidden rounded-full bg-background/15"><div className="h-full w-[78%] rounded-full bg-primary" /></div><div className="mt-3 flex justify-between text-[11px] text-background/55"><span>Source coverage</span><span className="font-mono text-background/80">78%</span></div><div className="mt-7 flex gap-2 border-t border-background/15 pt-4 text-[11px] leading-5 text-background/55"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-primary" /> Every input is labelled by freshness so stale data never hides in the baseline.</div></section>
+           <section className="panel p-5 sm:p-6"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-sm bg-primary/12 text-primary"><SlidersHorizontal size={17} /></div><div><div className="label-caps text-muted-foreground">How the number is built</div><h2 className="mt-1 font-display text-base font-semibold">Formula notes</h2></div></div><div className="mt-6 rounded-sm border border-border bg-secondary/45 p-4 font-mono text-xs leading-7 text-foreground"><span className="text-accent">delivered cost</span> = <span className="text-primary">HRC</span> + <span className="text-primary">conversion inputs</span> + <span className="text-primary">utilities</span><br /><span className="pl-[5.6rem]">+ labour + freight + overhead + margin</span><br /><span className="pl-[5.6rem]">carbon = emissions × (1 − free allocation) × EUA</span></div><div className="mt-5 grid gap-4 text-sm leading-6 text-muted-foreground sm:grid-cols-2"><p><span className="font-semibold text-foreground">Baseline.</span> A pure cold-rolling route starts with North Europe HRC as the dominant input. Iron ore and met coal stay embedded in that purchased coil.</p><p><span className="font-semibold text-foreground">Uncertainty.</span> The band expands with time and input volatility. It is a confidence range, not a guaranteed high/low.</p></div></section>
+           <section className="panel bg-foreground p-5 text-background sm:p-6"><div className="flex items-center justify-between"><div className="label-caps text-background/50">Source freshness</div><Activity size={16} className="text-primary" /></div><div className="mt-7 flex items-end gap-2"><div data-testid="text-live-source-count" className="data-mono text-5xl font-semibold tracking-[-.08em]">{String(liveSignalCount).padStart(2, '0')}</div><div className="mb-1 font-mono text-xs text-background/55">live signals</div></div><div className="mt-5 h-2 overflow-hidden rounded-full bg-background/15"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${sourceCoverage}%` }} /></div><div className="mt-3 flex justify-between text-[11px] text-background/55"><span>Source coverage</span><span className="font-mono text-background/80">{sourceCoverage}%</span></div><div className="mt-7 flex gap-2 border-t border-background/15 pt-4 text-[11px] leading-5 text-background/55"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-primary" /> Every input is labelled by freshness so stale data never hides in the baseline.</div></section>
         </div>
         <section className="border-l-2 border-primary bg-primary/8 px-5 py-5 sm:px-6"><div className="flex items-start gap-3"><AlertTriangle size={17} className="mt-0.5 shrink-0 text-primary" /><div><div className="label-caps text-primary">Accuracy disclaimer</div><p data-testid="text-accuracy-disclaimer" className="mt-2 max-w-4xl text-sm leading-6 text-foreground">{assumptions.disclaimer}</p></div></div></section>
         <div className="flex flex-col items-start justify-between gap-3 pb-4 text-[11px] text-muted-foreground sm:flex-row sm:items-center"><span>Last methodology review · 14 Feb 2025</span><Link data-testid="link-return-to-forecaster" href="/" className="inline-flex items-center gap-2 font-semibold text-foreground hover:text-primary">Return to forecaster <ArrowUpRight size={13} /></Link></div>

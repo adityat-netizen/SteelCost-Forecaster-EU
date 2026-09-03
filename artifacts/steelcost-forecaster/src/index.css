@@ -433,6 +433,32 @@
   }
 }
 
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  aside,
+  header,
+  .print-hide {
+    display: none !important;
+  }
+
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .panel {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  body {
+    background: white !important;
+  }
+}
+
 @layer base {
   html { scroll-behavior: smooth; }
   body { min-width: 320px; }

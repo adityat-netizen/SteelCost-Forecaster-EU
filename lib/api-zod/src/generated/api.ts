@@ -37,7 +37,10 @@ export const GetMarketOverviewResponse = zod.object({
   "unit": zod.string(),
   "freshness": zod.enum(['live', 'cached', 'estimated']),
   "source": zod.string(),
-  "updatedAt": zod.string()
+  "updatedAt": zod.string(),
+  "lastFetchedAt": zod.string(),
+  "sourceRefreshInterval": zod.enum(['daily', 'weekly', 'monthly']),
+  "nextExpectedUpdate": zod.string()
 })),
   "adjustment": zod.object({
   "country": zod.string(),

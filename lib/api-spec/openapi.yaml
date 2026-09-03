@@ -117,7 +117,14 @@ components:
           type: string
         updatedAt:
           type: string
-      required: [key, label, value, unit, freshness, source, updatedAt]
+        lastFetchedAt:
+          type: string
+        sourceRefreshInterval:
+          type: string
+          enum: [daily, weekly, monthly]
+        nextExpectedUpdate:
+          type: string
+      required: [key, label, value, unit, freshness, source, updatedAt, lastFetchedAt, sourceRefreshInterval, nextExpectedUpdate]
     CountryAdjustment:
       type: object
       properties:

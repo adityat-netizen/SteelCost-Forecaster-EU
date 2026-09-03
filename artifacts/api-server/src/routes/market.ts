@@ -63,6 +63,22 @@ const countryAdjustments: Record<Country, {
 
 const fallbackFx = 1.17;
 
+type RequestLike = Parameters<Parameters<IRouter["get"]>[1]>[0];
+
+function expectedUpdate(lastFetchedAt: string, interval: "daily" | "weekly" | "monthly") {
+  const next = new Date(lastFetchedAt);
+  if (interval === "daily") next.setUTCDate(next.getUTCDate() + 1);
+  if (interval === "weekly") next.setUTCDate(next.getUTCDate() + 7);
+  if (interval === "monthly") next.setUTCMonth(next.getUTCMonth() + 1);
+  return next.toISOString();
+}
+
+function dailyReference(now = new Date()) {
+  const reference = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 6, 0, 0));
+  if (now < reference) reference.setUTCDate(reference.getUTCDate() - 1);
+  return reference.toISOString();
+}
+
 async function getEurUsd(req: Parameters<Parameters<IRouter["get"]>[1]>[0]) {
   try {
     const response = await fetch("https://api.frankfurter.app/latest?from=EUR&to=USD", {
@@ -71,111 +87,74 @@ async function getEurUsd(req: Parameters<Parameters<IRouter["get"]>[1]>[0]) {
     if (!response.ok) throw new Error(`Frankfurter returned ${response.status}`);
     const payload = (await response.json()) as { rates?: { USD?: number } };
     if (typeof payload.rates?.USD !== "number") throw new Error("Frankfurter response had no USD rate");
-    return { value: payload.rates.USD, freshness: "live" as const, source: "Frankfurter API" };
+    const lastFetchedAt = dailyReference();
+    return { value: payload.rates.USD, freshness: "live" as const, source: "Frankfurter API", lastFetchedAt, sourceRefreshInterval: "daily" as const };
   } catch (error) {
     req.log.warn({ err: error }, "FX feed unavailable; using cached reference");
-    return { value: fallbackFx, freshness: "cached" as const, source: "Cached weekly reference" };
+    const lastFetchedAt = new Date(Date.now() - 86_400_000).toISOString();
+    return { value: fallbackFx, freshness: "cached" as const, source: "Cached daily reference", lastFetchedAt, sourceRefreshInterval: "daily" as const };
   }
 }
 
-async function buildInputs(req: Parameters<Parameters<IRouter["get"]>[1]>[0]) {
+function input(
+  key: string,
+  label: string,
+  value: number,
+  unit: string,
+  freshness: "live" | "cached" | "estimated",
+  source: string,
+  lastFetchedAt: string,
+  sourceRefreshInterval: "daily" | "weekly" | "monthly",
+) {
+  return {
+    key,
+    label,
+    value,
+    unit,
+    freshness,
+    source,
+    updatedAt: lastFetchedAt,
+    lastFetchedAt,
+    sourceRefreshInterval,
+    nextExpectedUpdate: expectedUpdate(lastFetchedAt, sourceRefreshInterval),
+  };
+}
+
+async function buildInputs(req: RequestLike) {
   const fx = await getEurUsd(req);
-  const updatedAt = new Date().toISOString();
+  const daily = dailyReference();
+  const weekly = "2026-09-01T06:00:00.000Z";
+  const monthly = "2026-09-01T06:00:00.000Z";
 
   return [
-    {
-      key: "hrc",
-      label: "North Europe HRC",
-      value: 612,
-      unit: "€/t",
-      freshness: "cached" as const,
-      source: "EU HRC benchmark",
-      updatedAt,
-    },
-    {
-      key: "ironOre",
-      label: "Iron ore · 62% Fe",
-      value: 103,
-      unit: "$/t",
-      freshness: "estimated" as const,
-      source: "Platts / SGX reference",
-      updatedAt,
-    },
-    {
-      key: "cokingCoal",
-      label: "Met coal",
-      value: 232,
-      unit: "$/t",
-      freshness: "estimated" as const,
-      source: "Global benchmark",
-      updatedAt,
-    },
-    {
-      key: "electricity",
-      label: "Industrial electricity",
-      value: 86,
-      unit: "€/MWh",
-      freshness: "estimated" as const,
-      source: "EU day-ahead reference",
-      updatedAt,
-    },
-    {
-      key: "ttf",
-      label: "TTF natural gas",
-      value: 34,
-      unit: "€/MWh",
-      freshness: "estimated" as const,
-      source: "TTF weekly reference",
-      updatedAt,
-    },
-    {
-      key: "carbon",
-      label: "EU ETS carbon",
-      value: 71,
-      unit: "€/tCO₂",
-      freshness: "estimated" as const,
-      source: "EUA futures reference",
-      updatedAt,
-    },
-    {
-      key: "eurUsd",
-      label: "EUR / USD",
-      value: fx.value,
-      unit: "$/€",
-      freshness: fx.freshness,
-      source: fx.source,
-      updatedAt,
-    },
-    {
-      key: "labor",
-      label: "Manufacturing labor",
-      value: 38.4,
-      unit: "€/h",
-      freshness: "cached" as const,
-      source: "Eurostat reference",
-      updatedAt,
-    },
-    {
-      key: "freight",
-      label: "EU corridor freight",
-      value: 42,
-      unit: "€/t",
-      freshness: "estimated" as const,
-      source: "EU rail / truck blend",
-      updatedAt,
-    },
+    input("hrc", "North Europe HRC", 612, "€/t", "cached", "EU HRC benchmark · Kallanish / MEPS proxy", weekly, "weekly"),
+    input("zinc", "LME zinc", 2680, "$/t", "estimated", "LME delayed-price proxy", daily, "daily"),
+    input("picklingAcid", "Pickling acid", 38, "€/t", "estimated", "Regional chemical reference", monthly, "monthly"),
+    input("rollingOil", "Rolling oils & emulsions", 11, "€/t", "estimated", "Mill consumables reference", monthly, "monthly"),
+    input("workRolls", "Refractories & work rolls", 16, "€/t", "estimated", "Maintenance cost reference", monthly, "monthly"),
+    input("electricity", "Industrial electricity", 86, "€/MWh", "estimated", "EU day-ahead reference · ENTSO-E proxy", daily, "daily"),
+    input("ttf", "TTF natural gas", 34, "€/MWh", "estimated", "TTF weekly reference", weekly, "weekly"),
+    input("water", "Water & wastewater", 3.5, "€/m³", "estimated", "Industrial utility reference", monthly, "monthly"),
+    input("compressedAir", "Compressed air & inert gases", 9, "€/t", "estimated", "Plant utility reference", monthly, "monthly"),
+    input("carbon", "EU ETS allowance", 84, "€/tCO₂", "estimated", "EUA futures-tracked proxy", daily, "daily"),
+    input("eurUsd", "EUR / USD", fx.value, "$/€", fx.freshness, fx.source, fx.lastFetchedAt, fx.sourceRefreshInterval),
+    input("labor", "Manufacturing labor", 38.4, "€/h", "cached", "Eurostat manufacturing reference", monthly, "monthly"),
+    input("freight", "EU corridor freight", 42, "€/t", "estimated", "EU rail / truck blend", monthly, "monthly"),
+    input("brent", "Brent crude", 76, "$/bbl", "estimated", "EIA / Alpha Vantage proxy", daily, "daily"),
   ];
 }
 
 function getBaseCost(inputs: Awaited<ReturnType<typeof buildInputs>>, country: Country) {
   const adjustment = countryAdjustments[country];
   const find = (key: string) => inputs.find((input) => input.key === key)?.value ?? 0;
-  const rawMaterials = find("hrc") * 0.54 + (find("ironOre") / find("eurUsd")) * 0.08 + (find("cokingCoal") / find("eurUsd")) * 0.06;
-  const energy = find("electricity") * 0.76 * adjustment.electricityMultiplier + find("ttf") * 0.24 * adjustment.electricityMultiplier + find("carbon") * 0.38;
-  const labor = find("labor") * 4.1 * adjustment.laborMultiplier;
-  const transport = find("freight") * adjustment.freightMultiplier;
-  const overhead = 76;
-  const subtotal = rawMaterials + energy + labor + transport + overhead;
+  const fx = find("eurUsd") || fallbackFx;
+  const freeAllocation = 0.85;
+  const rawMaterials = find("hrc") + (find("zinc") / fx) * 0.018 + find("picklingAcid") * 0.25 + find("rollingOil") * 0.4 + find("workRolls") * 0.8;
+  const utilities = (find("electricity") * 0.35 + find("ttf") * 0.12 + find("water") * 1.6 + find("compressedAir") + find("carbon") * 0.12 * (1 - freeAllocation)) * adjustment.electricityMultiplier;
+  const labor = find("labor") * 0.9 * adjustment.laborMultiplier;
+  const transport = (find("freight") * 0.65 + find("brent") * 0.04) * adjustment.freightMultiplier;
+  const overhead = 28;
+  const subtotal = rawMaterials + utilities + labor + transport + overhead;
   return Math.round(subtotal * 1.08);
 }
 
@@ -223,7 +202,7 @@ router.get("/market/forecast", async (req, res) => {
       score: 6.2,
       label: "Last 30-day HRC forecast error",
     },
-    methodology: "Weighted directional ensemble using recent HRC, energy, carbon, FX, and freight sensitivities. Bands widen with horizon and do not model shock events.",
+    methodology: "Weighted directional ensemble led by North Europe HRC, with utilities, EUA free-allocation exposure, FX, consumables, and freight sensitivities. Bands widen with horizon and do not model shock events.",
   });
   res.json(response);
 });
@@ -232,12 +211,16 @@ router.get("/market/assumptions", (_req, res) => {
   const response = GetMarketAssumptionsResponse.parse({
     title: "How the estimate is built",
     items: [
-      { label: "North Europe HRC", detail: "Primary benchmark for cold-rolled feedstock; cold rolling adds a modeled conversion premium.", status: "cached", refresh: "Weekly reference" },
-      { label: "Energy & carbon", detail: "Electricity, TTF gas, and EU ETS are modeled as separate drivers so country sensitivity stays visible.", status: "estimated", refresh: "Weekly reference" },
-      { label: "FX conversion", detail: "EUR/USD is fetched from Frankfurter when available; a cached weekly value is used if the public feed is unavailable.", status: "live", refresh: "Each dashboard load" },
-      { label: "Labor", detail: "EU manufacturing labor is a configurable share, not an assumed majority of mill cost.", status: "cached", refresh: "Monthly reference" },
+      { label: "North Europe HRC", detail: "HRC is the dominant input in a pure cold-rolling route, typically 70–80% of the modeled tonne before plant-specific contracts and hedging. Kallanish, MEPS, and Platts are the preferred benchmark families.", status: "cached", refresh: "Weekly reference" },
+      { label: "LME zinc & consumables", detail: "Zinc is modeled as delayed LME proxy plus a supplier premium; pickling acid, rolling oils, and work rolls are tracked as recurring consumables.", status: "estimated", refresh: "Daily / monthly" },
+      { label: "Electricity", detail: "ENTSO-E Transparency Platform is the preferred day-ahead source, with a country tariff multiplier for industrial delivery.", status: "estimated", refresh: "Daily proxy" },
+      { label: "TTF gas & utilities", detail: "TTF gas is joined by water, wastewater, compressed air, and inert gases so smaller recurring utilities are not hidden.", status: "estimated", refresh: "Weekly / monthly" },
+      { label: "EUA & free allocation", detail: "Effective carbon cost uses net emissions after free allocation. The allocation percentage can be decreased year over year as CBAM phases in.", status: "estimated", refresh: "Daily proxy / scenario" },
+      { label: "FX conversion", detail: "EUR/USD is fetched from Frankfurter when available; a cached daily value is used if the public feed is unavailable.", status: "live", refresh: "Daily" },
+      { label: "Labor", detail: "Eurostat manufacturing labor is a configurable 5–12% share for a cold-rolling operation, not an assumed majority of cost.", status: "cached", refresh: "Monthly reference" },
+      { label: "Freight & Brent", detail: "EU rail/truck corridors, port handling, Red Sea surcharges, and Brent-linked fuel exposure are represented as a delivered freight estimate.", status: "estimated", refresh: "Monthly / daily proxy" },
       { label: "Forecast bands", detail: "The forecast is directional and widens uncertainty from roughly 2% now to 10% at 12 weeks.", status: "estimated", refresh: "Recomputed on inputs" },
-      { label: "CBAM & trade", detail: "CBAM, duties, subsidies, hedging, and plant-specific contracts are represented through overhead and scenario assumptions in this first release.", status: "estimated", refresh: "Scenario input" },
+      { label: "Embedded upstream inputs", detail: "Iron ore and met coal are embedded in purchased HRC for a pure cold-rolling route and are not double-counted as separate costs.", status: "estimated", refresh: "Model rule" },
     ],
     disclaimer: "This tool provides a directional cost estimate based on publicly available indices and configurable assumptions. Actual mill-level costs vary by plant efficiency, contracts, and hedging. For financial or investment decisions, consult CRU, Platts, Wood Mackenzie, or a qualified analyst.",
   });

@@ -18,6 +18,15 @@ export const Freshness = {
   estimated: 'estimated',
 } as const;
 
+export type MarketInputSourceRefreshInterval = typeof MarketInputSourceRefreshInterval[keyof typeof MarketInputSourceRefreshInterval];
+
+
+export const MarketInputSourceRefreshInterval = {
+  daily: 'daily',
+  weekly: 'weekly',
+  monthly: 'monthly',
+} as const;
+
 export interface MarketInput {
   key: string;
   label: string;
@@ -26,6 +35,9 @@ export interface MarketInput {
   freshness: Freshness;
   source: string;
   updatedAt: string;
+  lastFetchedAt: string;
+  sourceRefreshInterval: MarketInputSourceRefreshInterval;
+  nextExpectedUpdate: string;
 }
 
 export interface CountryAdjustment {
