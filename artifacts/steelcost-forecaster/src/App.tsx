@@ -1,0 +1,457 @@
+import { type ReactNode, useMemo, useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  Activity,
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  BarChart3,
+  BookOpenText,
+  Check,
+  ChevronDown,
+  CircleHelp,
+  Clock3,
+  Database,
+  Download,
+  Factory,
+  FileText,
+  Gauge,
+  Info,
+  Menu,
+  RefreshCw,
+  ShieldCheck,
+  SlidersHorizontal,
+  Zap,
+} from 'lucide-react';
+import {
+  getGetMarketAssumptionsQueryKey,
+  getGetMarketForecastQueryKey,
+  getGetMarketOverviewQueryKey,
+  getHealthCheckQueryKey,
+  type MarketAssumptions,
+  type MarketForecast,
+  type MarketOverview,
+  useGetMarketAssumptions,
+  useGetMarketForecast,
+  useGetMarketOverview,
+  useHealthCheck,
+} from '@workspace/api-client-react';
+import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
+import { ErrorBoundary } from '@/components/error-boundary';
+import { Toaster } from '@/components/ui/toaster';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import NotFound from '@/pages/not-found';
+
+const queryClient = new QueryClient();
+const COUNTRIES = ['Germany', 'France', 'Italy', 'Poland', 'Spain', 'Netherlands', 'Belgium'] as const;
+type Country = (typeof COUNTRIES)[number];
+type ScenarioValues = { energy: number; labor: number; freight: number };
+
+const FALLBACK_OVERVIEW: MarketOverview = {
+  country: 'Germany',
+  asOf: '2025-02-14T08:30:00.000Z',
+  baseCostPerTon: 1048,
+  confidenceScore: 87,
+  liveInputCount: 4,
+  totalInputCount: 5,
+  adjustment: {
+    country: 'Germany',
+    electricityMultiplier: 1.08,
+    laborMultiplier: 1.14,
+    freightMultiplier: 1.02,
+    subsidyNote: 'No active production subsidy applied',
+  },
+  inputs: [
+    { key: 'scrap', label: 'EAF scrap index', value: 368, unit: '€/t', freshness: 'live', source: 'EUROFER / Fastmarkets', updatedAt: '2025-02-14T07:55:00.000Z' },
+    { key: 'electricity', label: 'Industrial electricity', value: 86.4, unit: '€/MWh', freshness: 'live', source: 'ENTSO-E day-ahead', updatedAt: '2025-02-14T08:00:00.000Z' },
+    { key: 'gas', label: 'Natural gas', value: 31.2, unit: '€/MWh', freshness: 'live', source: 'ICE TTF', updatedAt: '2025-02-14T08:00:00.000Z' },
+    { key: 'carbon', label: 'EU ETS allowance', value: 74.8, unit: '€/tCO₂', freshness: 'cached', source: 'ICE EUA settlement', updatedAt: '2025-02-13T17:35:00.000Z' },
+    { key: 'labor', label: 'Plant labor index', value: 112.6, unit: 'index', freshness: 'estimated', source: 'Eurostat 2024 Q4', updatedAt: '2025-01-31T09:10:00.000Z' },
+  ],
+};
+
+const FALLBACK_FORECAST: MarketForecast = {
+  country: 'Germany',
+  horizon: 8,
+  backtest: { score: 79, label: 'Good directional fit' },
+  methodology: 'Weighted EAF cost model with energy pass-through and an expanding uncertainty band.',
+  points: [
+    { week: 0, label: 'Now', costPerTon: 1048, lower: 1026, upper: 1072 },
+    { week: 1, label: 'Wk 09', costPerTon: 1054, lower: 1026, upper: 1084 },
+    { week: 2, label: 'Wk 10', costPerTon: 1061, lower: 1027, upper: 1097 },
+    { week: 3, label: 'Wk 11', costPerTon: 1057, lower: 1018, upper: 1096 },
+    { week: 4, label: 'Wk 12', costPerTon: 1070, lower: 1020, upper: 1120 },
+    { week: 5, label: 'Wk 13', costPerTon: 1082, lower: 1024, upper: 1140 },
+    { week: 6, label: 'Wk 14', costPerTon: 1076, lower: 1013, upper: 1142 },
+    { week: 7, label: 'Wk 15', costPerTon: 1091, lower: 1018, upper: 1164 },
+    { week: 8, label: 'Wk 16', costPerTon: 1102, lower: 1021, upper: 1183 },
+  ],
+};
+
+const FALLBACK_ASSUMPTIONS: MarketAssumptions = {
+  title: 'Model assumptions & source notes',
+  disclaimer: 'SteelCost Forecaster is a directional decision-support model. It is not a price guarantee, financial advice, or a substitute for supplier quotations and plant-specific validation. Market conditions can move materially between refreshes.',
+  items: [
+    { label: 'EAF scrap benchmark', detail: 'Regional ferrous scrap index, weighted to EU EAF capacity and delivered mill mix.', status: 'live', refresh: 'Daily · 08:00 CET' },
+    { label: 'Power cost pass-through', detail: 'Industrial day-ahead baseload with a country adjustment for network charges and typical load profile.', status: 'live', refresh: 'Hourly · rolling average' },
+    { label: 'Gas & carbon', detail: 'TTF gas and EUA settlement inputs, applied to the thermal portion of the melt and rolling route.', status: 'cached', refresh: 'Daily settlement' },
+    { label: 'Labour intensity', detail: 'Eurostat manufacturing wage index with an allowance for plant automation level.', status: 'estimated', refresh: 'Quarterly' },
+    { label: 'Freight & country factors', detail: 'Country multipliers reflect an indicative EU plant basket. They are not a quote for a specific lane.', status: 'estimated', refresh: 'Monthly review' },
+  ],
+};
+
+const euro = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+const number = new Intl.NumberFormat('en-IE', { maximumFractionDigits: 1 });
+
+function formatDate(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatUpdated(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function FreshnessPill({ freshness }: { freshness: string }) {
+  const label = freshness === 'live' ? 'Live' : freshness === 'cached' ? 'Cached' : 'Estimated';
+  return (
+    <span className="inline-flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
+      <span className={`status-dot status-${freshness}`} />
+      {label}
+    </span>
+  );
+}
+
+function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`loading-bar rounded-sm ${className}`} aria-hidden="true" />;
+}
+
+function EmptyOrError({ error, onRetry }: { error?: boolean; onRetry: () => void }) {
+  return (
+    <div className="panel flex min-h-[260px] flex-col items-center justify-center px-6 text-center">
+      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+        {error ? <AlertTriangle size={19} /> : <Database size={19} />}
+      </div>
+      <h2 className="font-display text-lg font-semibold text-foreground">{error ? 'Market feed unavailable' : 'No market data yet'}</h2>
+      <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+        {error ? 'The latest market snapshot could not be loaded. Check the connection and try again.' : 'There are no inputs for this selection yet.'}
+      </p>
+      <button data-testid="button-retry-market" onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-sm border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">
+        <RefreshCw size={13} /> Try again
+      </button>
+    </div>
+  );
+}
+
+function BrandMark() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="relative flex h-9 w-9 items-center justify-center rounded-sm bg-primary text-primary-foreground">
+        <Factory size={18} strokeWidth={2.2} />
+        <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-accent" />
+      </div>
+      <div>
+        <div className="font-display text-[15px] font-bold tracking-[-.03em] text-sidebar-foreground">STEELCOST</div>
+        <div className="label-caps text-[9px] text-sidebar-foreground/55">Forecaster · EU</div>
+      </div>
+    </div>
+  );
+}
+
+function Shell({ children }: { children: ReactNode }) {
+  const [location] = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const health = useHealthCheck({ query: { queryKey: getHealthCheckQueryKey(), staleTime: 60_000 } });
+
+  const nav = [
+    { href: '/', label: 'Forecaster', icon: Gauge, testId: 'link-forecaster' },
+    { href: '/assumptions', label: 'Model & assumptions', icon: BookOpenText, testId: 'link-assumptions' },
+  ];
+
+  return (
+    <div className="steel-noise flex min-h-[100dvh] bg-background text-foreground">
+      <aside className={`fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col bg-sidebar text-sidebar-foreground shadow-2xl transition-transform duration-200 md:static md:translate-x-0 md:shadow-none ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="flex h-[76px] items-center border-b border-sidebar-border px-6"><BrandMark /></div>
+        <div className="flex-1 px-3 py-7">
+          <div className="label-caps px-3 text-sidebar-foreground/40">Workspace</div>
+          <nav className="mt-3 space-y-1">
+            {nav.map(({ href, label, icon: Icon, testId }) => {
+              const active = href === '/' ? location === '/' : location.startsWith(href);
+              return (
+                <Link data-testid={testId} key={href} href={href} onClick={() => setMobileOpen(false)} className={`group flex items-center gap-3 rounded-sm border-l-2 px-3 py-3 text-sm font-medium ${active ? 'border-sidebar-primary bg-sidebar-accent text-sidebar-accent-foreground' : 'border-transparent text-sidebar-foreground/62 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground'}`}>
+                  <Icon size={17} strokeWidth={active ? 2.2 : 1.7} />
+                  <span>{label}</span>
+                  {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-sidebar-primary" />}
+                </Link>
+              );
+            })}
+          </nav>
+          <div className="mt-10 rounded-sm border border-sidebar-border bg-sidebar-accent/50 p-4">
+            <div className="flex items-center justify-between">
+              <span className="label-caps text-sidebar-foreground/45">Data connection</span>
+              <span className={`status-dot ${health.data?.status === 'ok' ? 'status-live' : health.isLoading ? 'status-cached' : 'status-estimated'}`} />
+            </div>
+            <p data-testid="status-api-connection" className="mt-2 text-xs text-sidebar-foreground/75">{health.data?.status === 'ok' ? 'Market feeds operational' : health.isLoading ? 'Checking feeds…' : 'Using last available snapshot'}</p>
+            <div className="mt-3 flex items-center gap-2 text-[10px] text-sidebar-foreground/45"><Clock3 size={12} /> Refreshes every 15 min</div>
+          </div>
+        </div>
+        <div className="border-t border-sidebar-border px-6 py-5">
+          <div className="flex items-center gap-2 text-[11px] text-sidebar-foreground/55"><ShieldCheck size={14} /> Decision support, not a quote</div>
+          <div className="mt-2 font-mono text-[10px] text-sidebar-foreground/30">BUILD 1.4.7 · EU-27</div>
+        </div>
+      </aside>
+      {mobileOpen && <button data-testid="button-close-sidebar-overlay" aria-label="Close navigation" onClick={() => setMobileOpen(false)} className="fixed inset-0 z-30 bg-sidebar/45 md:hidden" />}
+      <div className="min-w-0 flex-1">
+        <header className="sticky top-0 z-20 flex h-[76px] items-center justify-between border-b border-border/80 bg-background/95 px-5 backdrop-blur md:px-9">
+          <div className="flex items-center gap-3">
+            <button data-testid="button-open-sidebar" aria-label="Open navigation" onClick={() => setMobileOpen(true)} className="rounded-sm p-2 text-muted-foreground hover:bg-secondary md:hidden"><Menu size={20} /></button>
+            <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
+              <span className="font-mono text-[10px] uppercase tracking-[.12em]">Operations</span><span>/</span><span className="text-foreground">{location === '/assumptions' ? 'Model & assumptions' : 'Cost forecaster'}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="hidden rounded-sm border border-border px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground sm:inline-flex">EUR / metric tonne</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card font-display text-xs font-bold text-foreground">EU</div>
+          </div>
+        </header>
+        <main className="mx-auto max-w-[1520px] px-5 py-7 md:px-9 md:py-10">{children}</main>
+      </div>
+    </div>
+  );
+}
+
+function PageIntro({ onExport, exported }: { onExport: () => void; exported: boolean }) {
+  return (
+    <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end">
+      <div>
+        <div className="label-caps mb-3 flex items-center gap-2 text-accent"><span className="h-1.5 w-1.5 rounded-full bg-accent" />Live planning workspace</div>
+        <h1 className="font-display text-[clamp(2rem,4vw,3.35rem)] font-bold leading-[.98] tracking-[-.055em] text-foreground">Steel cost<br className="hidden sm:block" /> forecaster<span className="text-primary">.</span></h1>
+        <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">A clear view of what your next tonne could cost — grounded in current EU market signals and transparent assumptions.</p>
+      </div>
+      <button data-testid="button-export-forecast" onClick={onExport} className="group inline-flex h-10 items-center justify-center gap-2 self-start rounded-sm bg-primary px-4 text-xs font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:bg-primary/90 md:self-end">
+        <Download size={15} /> {exported ? 'Exported to CSV' : 'Export forecast'}
+      </button>
+    </div>
+  );
+}
+
+function MarketInputPanel({ overview }: { overview: MarketOverview }) {
+  return (
+    <section className="panel appear overflow-hidden">
+      <div className="panel-header flex items-center justify-between px-5 py-4">
+        <div><div className="label-caps text-muted-foreground">Market snapshot</div><h2 className="mt-1 font-display text-base font-semibold">Current inputs</h2></div>
+        <div className="flex items-center gap-2 text-right"><Activity size={14} className="text-accent" /><div><div className="label-caps text-muted-foreground">As of</div><div data-testid="text-market-as-of" className="font-mono text-[11px] text-foreground">{formatDate(overview.asOf)}</div></div></div>
+      </div>
+      <div className="divide-y divide-border/70">
+        {overview.inputs.map((input) => (
+          <div data-testid={`row-market-input-${input.key}`} key={input.key} className="group grid grid-cols-[1fr_auto] gap-3 px-5 py-3.5 sm:grid-cols-[1fr_auto_auto] sm:items-center">
+            <div><div className="text-sm font-medium text-foreground">{input.label}</div><div className="mt-1 text-[11px] text-muted-foreground">{input.source} · updated {formatUpdated(input.updatedAt)}</div></div>
+            <div data-testid={`text-market-value-${input.key}`} className="data-mono text-right text-sm font-semibold text-foreground">{number.format(input.value)} <span className="text-[10px] font-normal text-muted-foreground">{input.unit}</span></div>
+            <div className="col-span-2 sm:col-span-1 sm:justify-self-end"><FreshnessPill freshness={input.freshness} /></div>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-start gap-3 bg-secondary/55 px-5 py-3.5 text-xs leading-5 text-muted-foreground"><Info size={14} className="mt-0.5 shrink-0 text-accent" /><span>Live values are refreshed as source feeds publish. Cached and estimated values remain visible so you can judge the model’s signal quality.</span></div>
+    </section>
+  );
+}
+
+function ScenarioPanel({ overview, country, setCountry, onApply }: { overview: MarketOverview; country: Country; setCountry: (country: Country) => void; onApply: (values: ScenarioValues) => void }) {
+  const [assumptions, setAssumptions] = useState<ScenarioValues>({ energy: 86.4, labor: 112.6, freight: 42 });
+  const [saved, setSaved] = useState(false);
+  const update = (key: keyof typeof assumptions, value: string) => { setAssumptions((previous) => ({ ...previous, [key]: Number(value) || 0 })); setSaved(false); };
+  return (
+    <section className="panel appear appear-delay-1 overflow-hidden">
+      <div className="panel-header flex items-center justify-between px-5 py-4">
+        <div><div className="label-caps text-muted-foreground">Scenario controls</div><h2 className="mt-1 font-display text-base font-semibold">Adjust your baseline</h2></div>
+        <SlidersHorizontal size={17} className="text-primary" />
+      </div>
+      <div className="space-y-6 p-5">
+        <div>
+          <label htmlFor="country-select" className="label-caps text-muted-foreground">Production country</label>
+          <div className="relative mt-2">
+            <select id="country-select" data-testid="select-country" value={country} onChange={(event) => setCountry(event.target.value as Country)} className="w-full appearance-none rounded-sm border border-input bg-background px-3 py-2.5 text-sm font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
+              {COUNTRIES.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+            <ChevronDown size={15} className="pointer-events-none absolute right-3 top-3 text-muted-foreground" />
+          </div>
+          <p data-testid="text-country-adjustment" className="mt-2 text-[11px] text-muted-foreground">Country factors: electricity <span className="font-mono text-foreground">{overview.adjustment.electricityMultiplier.toFixed(2)}×</span> · labour <span className="font-mono text-foreground">{overview.adjustment.laborMultiplier.toFixed(2)}×</span> · freight <span className="font-mono text-foreground">{overview.adjustment.freightMultiplier.toFixed(2)}×</span></p>
+        </div>
+        <div className="border-t border-border/70 pt-5">
+          <div className="flex items-center justify-between"><span className="label-caps text-muted-foreground">Editable assumptions</span><span className="text-[10px] text-muted-foreground">Scenario only</span></div>
+          <div className="mt-3 space-y-3">
+            {[
+              { key: 'energy' as const, label: 'Power price', unit: '€/MWh', hint: 'Current industrial rate' },
+              { key: 'labor' as const, label: 'Labour index', unit: 'index', hint: 'Plant-specific override' },
+              { key: 'freight' as const, label: 'Inbound freight', unit: '€/t', hint: 'Delivered to plant' },
+            ].map((item) => (
+              <label key={item.key} className="grid grid-cols-[1fr_112px] items-center gap-3">
+                <span><span className="block text-xs font-medium">{item.label}</span><span className="mt-0.5 block text-[10px] text-muted-foreground">{item.hint}</span></span>
+                <span className="relative"><input data-testid={`input-assumption-${item.key}`} aria-label={item.label} type="number" step="0.1" value={assumptions[item.key]} onChange={(event) => update(item.key, event.target.value)} className="data-mono w-full rounded-sm border border-input bg-background px-2.5 py-2 pr-12 text-right text-xs text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" /><span className="pointer-events-none absolute right-2 top-2 text-[10px] text-muted-foreground">{item.unit}</span></span>
+              </label>
+            ))}
+          </div>
+          <button data-testid="button-apply-assumptions" onClick={() => { onApply(assumptions); setSaved(true); }} className={`mt-4 flex w-full items-center justify-center gap-2 rounded-sm border px-3 py-2 text-xs font-semibold ${saved ? 'border-accent/40 bg-accent/10 text-accent' : 'border-border bg-secondary text-foreground hover:border-primary/50 hover:bg-secondary/80'}`}>
+            {saved ? <Check size={14} /> : <Zap size={14} />} {saved ? 'Scenario applied' : 'Apply to forecast'}
+          </button>
+          {saved && <div data-testid="text-scenario-applied" className="mt-2 text-center text-[10px] text-accent">Cost anatomy and outlook updated with your overrides.</div>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ContributionPanel({ overview, scenarioCost }: { overview: MarketOverview; scenarioCost?: number }) {
+  const total = scenarioCost ?? overview.baseCostPerTon;
+  const parts = [
+    { label: 'Raw material', value: Math.round(total * .53), color: 'bg-primary' },
+    { label: 'Energy', value: Math.round(total * .19), color: 'bg-accent' },
+    { label: 'Conversion & labour', value: Math.round(total * .16), color: 'bg-foreground/55' },
+    { label: 'Freight & other', value: Math.round(total * .12), color: 'bg-muted-foreground/45' },
+  ];
+  return (
+    <section className="panel appear appear-delay-2 overflow-hidden">
+      <div className="panel-header flex items-center justify-between px-5 py-4"><div><div className="label-caps text-muted-foreground">Cost anatomy</div><h2 className="mt-1 font-display text-base font-semibold">What drives the tonne</h2></div><BarChart3 size={17} className="text-primary" /></div>
+      <div className="p-5">
+        <div className="flex items-end justify-between"><div><div className="label-caps text-muted-foreground">Estimated {scenarioCost ? 'scenario' : 'base'} cost</div><div data-testid="text-base-cost" className="mt-1 data-mono text-3xl font-semibold tracking-[-.05em]">{euro.format(total)}<span className="ml-1 text-sm font-normal tracking-normal text-muted-foreground">/ t</span></div></div><div className="text-right text-xs text-muted-foreground">{scenarioCost ? 'with overrides' : 'before scenario'}<br /><span className="font-mono text-foreground">{overview.country}</span></div></div>
+        <div className="mt-6 flex h-3 overflow-hidden rounded-[2px] bg-secondary">{parts.map((part) => <div key={part.label} style={{ width: `${(part.value / total) * 100}%` }} className={`${part.color} transition-all duration-300`} />)}</div>
+        <div className="mt-5 space-y-3">{parts.map((part) => <div data-testid={`row-cost-contribution-${part.label.toLowerCase().replaceAll(' ', '-')}`} key={part.label} className="flex items-center justify-between text-xs"><span className="flex items-center gap-2.5 text-muted-foreground"><span className={`h-2 w-2 rounded-[1px] ${part.color}`} />{part.label}</span><span className="data-mono font-medium text-foreground">{euro.format(part.value)} <span className="ml-1 text-[10px] text-muted-foreground">{Math.round((part.value / total) * 100)}%</span></span></div>)}</div>
+        <div className="mt-6 border-t border-border/70 pt-4 text-[11px] leading-5 text-muted-foreground">The mix is a modelled view of cost contribution, not an accounting allocation. Country multipliers are applied after the regional baseline.</div>
+      </div>
+    </section>
+  );
+}
+
+function ForecastChart({ forecast }: { forecast: MarketForecast }) {
+  const chart = useMemo(() => {
+    const points = forecast.points.length ? forecast.points : FALLBACK_FORECAST.points;
+    const values = points.flatMap((point) => [point.lower, point.upper]);
+    const min = Math.min(...values) - 10;
+    const max = Math.max(...values) + 10;
+    const x = (index: number) => 24 + (index * 712) / Math.max(points.length - 1, 1);
+    const y = (value: number) => 228 - ((value - min) / (max - min)) * 196;
+    const line = points.map((point, index) => `${x(index)},${y(point.costPerTon)}`).join(' ');
+    const upper = points.map((point, index) => `${x(index)},${y(point.upper)}`).join(' ');
+    const lower = [...points].reverse().map((point, index) => `${x(points.length - 1 - index)},${y(point.lower)}`).join(' ');
+    return { points, line, band: `${upper} ${lower}`, x, y, min, max };
+  }, [forecast]);
+  return (
+    <section className="panel overflow-hidden">
+      <div className="panel-header flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Directional outlook</div><h2 className="mt-1 font-display text-base font-semibold">Cost forecast with uncertainty</h2></div><div className="flex items-center gap-4 text-[11px] text-muted-foreground"><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-primary" />Expected</span><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-accent/20" />Range</span></div></div>
+      <div className="p-3 pt-5 sm:p-5">
+        <div className="mb-2 flex items-start justify-between"><div><div className="data-mono text-2xl font-semibold">{euro.format(chart.points[0]?.costPerTon ?? 0)}<span className="ml-1 text-xs font-normal text-muted-foreground">/ t today</span></div><div className="mt-1 flex items-center gap-1 text-xs text-destructive"><ArrowUpRight size={13} />{chart.points.length > 1 ? `${euro.format((chart.points.at(-1)?.costPerTon ?? 0) - (chart.points[0]?.costPerTon ?? 0))} by horizon` : 'Awaiting horizon'}</div></div><div className="rounded-sm border border-border bg-secondary/45 px-3 py-2 text-right"><div className="label-caps text-muted-foreground">Backtest</div><div data-testid="text-backtest-score" className="data-mono mt-1 text-sm font-semibold text-accent">{forecast.backtest.score}<span className="text-[10px] font-normal text-muted-foreground"> / 100</span></div></div></div>
+        <div className="overflow-x-auto"><svg data-testid="chart-forecast" className="mt-3 min-w-[640px]" viewBox="0 0 760 280" role="img" aria-label="Forecast cost chart with uncertainty range">
+          <g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1="24" y1="32" x2="736" y2="32" /><line x1="24" y1="98" x2="736" y2="98" /><line x1="24" y1="164" x2="736" y2="164" /><line x1="24" y1="228" x2="736" y2="228" /></g>
+          <polygon points={chart.band} fill="hsl(var(--accent) / .13)" />
+          <polyline points={chart.line} fill="none" stroke="hsl(var(--primary))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          {chart.points.map((point, index) => <g key={point.week}><circle cx={chart.x(index)} cy={chart.y(point.costPerTon)} r={index === 0 ? 5 : 3.5} fill="hsl(var(--card))" stroke="hsl(var(--primary))" strokeWidth="2.5" /><text x={chart.x(index)} y="252" textAnchor="middle" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="10">{point.label}</text>{index === 0 && <text x={chart.x(index)} y={chart.y(point.costPerTon) - 12} textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontWeight="600" fontSize="10">{euro.format(point.costPerTon)}</text>}</g>)}
+          <text x="736" y="26" textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="9">{euro.format(chart.max)}</text><text x="736" y="224" textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="9">{euro.format(chart.min)}</text>
+        </svg></div>
+        <div className="mt-1 flex items-start gap-2 border-t border-border/70 pt-3 text-[11px] leading-5 text-muted-foreground"><Info size={13} className="mt-0.5 shrink-0" />The shaded range widens with time. Treat the direction as a planning signal and validate near-term orders with suppliers.</div>
+      </div>
+    </section>
+  );
+}
+
+function DecisionPanel({ overview }: { overview: MarketOverview }) {
+  return (
+    <section className="panel overflow-hidden">
+      <div className="panel-header px-5 py-4"><div className="label-caps text-muted-foreground">Decision notes</div><h2 className="mt-1 font-display text-base font-semibold">What to consider for {overview.country}</h2></div>
+      <div className="grid divide-y divide-border/70 md:grid-cols-2 md:divide-x md:divide-y-0">
+        <div className="p-5"><div className="flex items-center gap-2 text-xs font-semibold text-accent"><ArrowDownRight size={15} /> Tailwinds</div><ul className="mt-4 space-y-3 text-sm leading-5 text-muted-foreground"><li className="flex gap-3"><Check size={15} className="mt-0.5 shrink-0 text-accent" />Scrap input is currently the strongest stable component in the regional mix.</li><li className="flex gap-3"><Check size={15} className="mt-0.5 shrink-0 text-accent" />{overview.liveInputCount} of {overview.totalInputCount} active inputs are live or recently refreshed.</li></ul></div>
+        <div className="p-5"><div className="flex items-center gap-2 text-xs font-semibold text-primary"><ArrowUpRight size={15} /> Watch items</div><ul className="mt-4 space-y-3 text-sm leading-5 text-muted-foreground"><li className="flex gap-3"><CircleHelp size={15} className="mt-0.5 shrink-0 text-primary" />Power and carbon sensitivity can widen delivered cost quickly.</li><li className="flex gap-3"><CircleHelp size={15} className="mt-0.5 shrink-0 text-primary" />Labour input is estimated; use a plant-specific override before approval.</li></ul></div>
+      </div>
+    </section>
+  );
+}
+
+function ConfidenceCard({ overview }: { overview: MarketOverview }) {
+  const circumference = 2 * Math.PI * 29;
+  return (
+    <div className="panel flex items-center gap-4 p-5">
+      <div className="relative h-[72px] w-[72px] shrink-0"><svg viewBox="0 0 72 72" className="-rotate-90"><circle cx="36" cy="36" r="29" fill="none" stroke="hsl(var(--secondary))" strokeWidth="7" /><circle data-testid="progress-confidence" cx="36" cy="36" r="29" fill="none" stroke="hsl(var(--accent))" strokeWidth="7" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - overview.confidenceScore / 100)} /></svg><span className="absolute inset-0 flex items-center justify-center data-mono text-sm font-semibold">{overview.confidenceScore}</span></div>
+      <div><div className="label-caps text-muted-foreground">Signal confidence</div><div data-testid="text-confidence-label" className="mt-1 text-sm font-semibold">{overview.confidenceScore >= 80 ? 'High confidence' : 'Use with care'}</div><p className="mt-1 text-[11px] leading-4 text-muted-foreground">Based on freshness, coverage<br />and recent backtest performance.</p></div>
+    </div>
+  );
+}
+
+function Home() {
+  const [country, setCountry] = useState<Country>('Germany');
+  const [horizon, setHorizon] = useState(8);
+  const [scenario, setScenario] = useState<ScenarioValues | null>(null);
+  const [exported, setExported] = useState(false);
+  const overviewQuery = useGetMarketOverview({ country }, { query: { queryKey: getGetMarketOverviewQueryKey({ country }), staleTime: 300_000 } });
+  const forecastQuery = useGetMarketForecast({ country, horizon }, { query: { queryKey: getGetMarketForecastQueryKey({ country, horizon }), staleTime: 300_000 } });
+  const overview = overviewQuery.data ?? (overviewQuery.isLoading ? undefined : { ...FALLBACK_OVERVIEW, country, adjustment: { ...FALLBACK_OVERVIEW.adjustment, country } });
+  const forecast = forecastQuery.data ?? { ...FALLBACK_FORECAST, country, horizon };
+  const scenarioCost = overview && scenario ? overview.baseCostPerTon + (scenario.energy - 86.4) * 3 + (scenario.labor - 112.6) * 2 + (scenario.freight - 42) : undefined;
+  const forecastForChart = useMemo<MarketForecast>(() => {
+    if (!scenarioCost || !overview) return forecast;
+    const delta = scenarioCost - overview.baseCostPerTon;
+    return { ...forecast, points: forecast.points.map((point) => ({ ...point, costPerTon: point.costPerTon + delta, lower: point.lower + delta, upper: point.upper + delta })) };
+  }, [forecast, overview, scenarioCost]);
+  const exportForecast = () => {
+    const rows = [['Country', 'Week', 'Expected cost (EUR/t)', 'Lower range', 'Upper range'], ...forecast.points.map((point) => [country, point.label, String(point.costPerTon), String(point.lower), String(point.upper)])];
+    const blob = new Blob([rows.map((row) => row.join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url; anchor.download = `steelcost-${country.toLowerCase()}-${horizon}w.csv`; anchor.click(); URL.revokeObjectURL(url);
+    setExported(true); window.setTimeout(() => setExported(false), 2400);
+  };
+  return (
+    <>
+      <PageIntro onExport={exportForecast} exported={exported} />
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr]">
+        <div className="panel flex items-center justify-between bg-foreground p-5 text-background"><div><div className="label-caps text-background/55">Planning baseline</div><div data-testid="text-hero-cost" className="mt-2 data-mono text-3xl font-semibold tracking-[-.05em]">{overview ? euro.format(overview.baseCostPerTon) : <Skeleton className="h-9 w-28 bg-background/10" />}<span className="ml-1 text-xs font-normal tracking-normal text-background/55">/ metric tonne</span></div><div className="mt-2 text-[11px] text-background/55">Current {country} production scenario</div></div><div className="flex h-11 w-11 items-center justify-center rounded-sm bg-primary text-primary-foreground"><Factory size={21} /></div></div>
+        {overview ? <ConfidenceCard overview={overview} /> : <div className="panel h-[112px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-32" /></div>}
+        <div className="panel p-5"><div className="flex items-center justify-between"><div className="label-caps text-muted-foreground">Regional adjustment</div><span className="rounded-sm bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary">{country === 'Germany' ? 'BASE' : 'COUNTRY'}</span></div><div data-testid="text-regional-adjustment" className="mt-3 data-mono text-2xl font-semibold">{overview ? `${overview.adjustment.electricityMultiplier.toFixed(2)}×` : <Skeleton className="h-7 w-20" />}</div><div className="mt-1 text-[11px] text-muted-foreground">Electricity vs. EU baseline</div></div>
+      </div>
+      {overviewQuery.isError && !overview ? <EmptyOrError error onRetry={() => overviewQuery.refetch()} /> : overview ? <div className="grid gap-5 xl:grid-cols-[minmax(270px,1.05fr)_minmax(270px,.95fr)_minmax(340px,1.5fr)]"><MarketInputPanel overview={overview} /><ScenarioPanel overview={overview} country={country} setCountry={(nextCountry) => { setCountry(nextCountry); setScenario(null); }} onApply={setScenario} /><ContributionPanel overview={overview} scenarioCost={scenarioCost} /></div> : <div className="grid gap-5 xl:grid-cols-3"><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /><Skeleton className="mt-8 h-4 w-full" /><Skeleton className="mt-4 h-4 w-4/5" /><Skeleton className="mt-4 h-4 w-11/12" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div></div>}
+      <div className="mt-5 flex flex-col gap-5">
+        <div className="panel overflow-hidden">
+          <div className="panel-header flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Planning horizon</div><h2 className="mt-1 font-display text-base font-semibold">Look ahead before you commit volume</h2></div><div data-testid="control-horizon" className="flex rounded-sm border border-border bg-secondary/55 p-1">{[4, 8, 12].map((item) => <button data-testid={`button-horizon-${item}`} key={item} onClick={() => setHorizon(item)} className={`rounded-sm px-3 py-1.5 font-mono text-[11px] ${horizon === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{item} weeks</button>)}</div></div>
+          {forecastQuery.isError ? <div className="p-5"><EmptyOrError error onRetry={() => forecastQuery.refetch()} /></div> : <ForecastChart forecast={forecastForChart} />}
+        </div>
+        {overview && <DecisionPanel overview={overview} />}
+      </div>
+    </>
+  );
+}
+
+function AssumptionsPage() {
+  const assumptionsQuery = useGetMarketAssumptions({ query: { queryKey: getGetMarketAssumptionsQueryKey(), staleTime: 900_000 } });
+  const assumptions = assumptionsQuery.data ?? (assumptionsQuery.isLoading ? undefined : FALLBACK_ASSUMPTIONS);
+  return (
+    <>
+      <div className="mb-9 max-w-3xl"><div className="label-caps mb-3 flex items-center gap-2 text-accent"><span className="h-1.5 w-1.5 rounded-full bg-accent" />Model transparency</div><h1 className="font-display text-[clamp(2rem,4vw,3.35rem)] font-bold leading-[.98] tracking-[-.055em]">A forecast you<br />can interrogate<span className="text-primary">.</span></h1><p className="mt-5 max-w-2xl text-sm leading-6 text-muted-foreground">SteelCost makes its inputs, adjustments, and uncertainty visible by design. Use this page to understand what sits behind the number before it enters a sourcing decision.</p></div>
+      {assumptionsQuery.isError && !assumptions ? <EmptyOrError error onRetry={() => assumptionsQuery.refetch()} /> : assumptions ? <div className="space-y-5">
+        <section className="panel overflow-hidden">
+          <div className="panel-header flex items-center justify-between px-5 py-4"><div><div className="label-caps text-muted-foreground">Methodology ledger</div><h2 data-testid="text-assumptions-title" className="mt-1 font-display text-base font-semibold">{assumptions.title}</h2></div><FileText size={17} className="text-primary" /></div>
+          <div className="divide-y divide-border/70">{assumptions.items.map((item, index) => <div data-testid={`row-assumption-${index}`} key={item.label} className="grid gap-3 px-5 py-5 md:grid-cols-[220px_1fr_145px] md:items-start"><div className="flex items-start gap-3"><span className="data-mono flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-secondary text-[10px] text-muted-foreground">{String(index + 1).padStart(2, '0')}</span><div className="text-sm font-semibold">{item.label}</div></div><div className="text-sm leading-6 text-muted-foreground">{item.detail}</div><div className="flex items-center justify-between gap-3 md:block md:text-right"><FreshnessPill freshness={item.status} /><div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground md:justify-end"><RefreshCw size={10} />{item.refresh}</div></div></div>)}</div>
+        </section>
+        <div className="grid gap-5 lg:grid-cols-[1.2fr_.8fr]">
+          <section className="panel p-5 sm:p-6"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-sm bg-primary/12 text-primary"><SlidersHorizontal size={17} /></div><div><div className="label-caps text-muted-foreground">How the number is built</div><h2 className="mt-1 font-display text-base font-semibold">Formula notes</h2></div></div><div className="mt-6 rounded-sm border border-border bg-secondary/45 p-4 font-mono text-xs leading-7 text-foreground"><span className="text-accent">delivered cost</span> = <span className="text-primary">scrap</span> + <span className="text-primary">energy</span> + <span className="text-primary">conversion</span><br /><span className="pl-[5.6rem]">+ freight − subsidy</span></div><div className="mt-5 grid gap-4 text-sm leading-6 text-muted-foreground sm:grid-cols-2"><p><span className="font-semibold text-foreground">Baseline.</span> A regional EAF route is used as the common starting point, then country factors reflect typical operating conditions.</p><p><span className="font-semibold text-foreground">Uncertainty.</span> The band expands with time and input volatility. It is a confidence range, not a guaranteed high/low.</p></div></section>
+          <section className="panel bg-foreground p-5 text-background sm:p-6"><div className="flex items-center justify-between"><div className="label-caps text-background/50">Source freshness</div><Activity size={16} className="text-primary" /></div><div className="mt-7 flex items-end gap-2"><div data-testid="text-live-source-count" className="data-mono text-5xl font-semibold tracking-[-.08em]">04</div><div className="mb-1 font-mono text-xs text-background/55">live signals</div></div><div className="mt-5 h-2 overflow-hidden rounded-full bg-background/15"><div className="h-full w-[78%] rounded-full bg-primary" /></div><div className="mt-3 flex justify-between text-[11px] text-background/55"><span>Source coverage</span><span className="font-mono text-background/80">78%</span></div><div className="mt-7 flex gap-2 border-t border-background/15 pt-4 text-[11px] leading-5 text-background/55"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-primary" /> Every input is labelled by freshness so stale data never hides in the baseline.</div></section>
+        </div>
+        <section className="border-l-2 border-primary bg-primary/8 px-5 py-5 sm:px-6"><div className="flex items-start gap-3"><AlertTriangle size={17} className="mt-0.5 shrink-0 text-primary" /><div><div className="label-caps text-primary">Accuracy disclaimer</div><p data-testid="text-accuracy-disclaimer" className="mt-2 max-w-4xl text-sm leading-6 text-foreground">{assumptions.disclaimer}</p></div></div></section>
+        <div className="flex flex-col items-start justify-between gap-3 pb-4 text-[11px] text-muted-foreground sm:flex-row sm:items-center"><span>Last methodology review · 14 Feb 2025</span><Link data-testid="link-return-to-forecaster" href="/" className="inline-flex items-center gap-2 font-semibold text-foreground hover:text-primary">Return to forecaster <ArrowUpRight size={13} /></Link></div>
+      </div> : <div className="space-y-5"><div className="panel h-64 p-5"><Skeleton className="h-5 w-44" /><Skeleton className="mt-8 h-4 w-full" /><Skeleton className="mt-4 h-4 w-4/5" /></div><div className="panel h-48 p-5"><Skeleton className="h-5 w-32" /></div></div>}
+    </>
+  );
+}
+
+function Router() {
+  return <RoutedErrorBoundary><Shell><Switch><Route path="/" component={Home} /><Route path="/assumptions" component={AssumptionsPage} /><Route component={NotFound} /></Switch></Shell></RoutedErrorBoundary>;
+}
+
+function RoutedErrorBoundary({ children }: { children: ReactNode }) {
+  const [location] = useLocation();
+  return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
+}
+
+function App() {
+  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
+}
+
+export default App;

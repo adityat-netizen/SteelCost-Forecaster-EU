@@ -1,0 +1,120 @@
+# Replit Build Prompt: Cold Steel Manufacturing Cost Forecast Website
+
+Copy everything below into Replit's AI Agent / Assistant to build the app.
+
+---
+
+## PROMPT TO PASTE INTO REPLIT
+
+Build a full-stack web app called **"SteelCost Forecaster – EU Edition"** that estimates and forecasts the total production cost of cold-rolled steel for the **European market**, broken into every major cost driver, using live market data where possible.
+
+### 0. Accuracy target — read this before building
+The user wants 90-95% prediction accuracy. Be upfront in the app about what that can realistically mean:
+- **Achievable**: 90-95% accuracy (i.e., forecast within ~5-10% of actual price) for **1-4 week ahead** forecasts on liquid, well-tracked inputs like HRC price, iron ore, and EUR/USD — using a proper statistical/ML model (ARIMA, Prophet, or gradient-boosted regression) trained on historical data, not a straight-line trend.
+- **Not realistically achievable**: 90-95% accuracy for 6-12 month forecasts, or through sudden-shock events (energy crises, war, tariff announcements, EU policy changes). No model, including ones used by CRU/Platts/Wood Mackenzie professionally, reliably hits that on long horizons.
+- Build the app to be transparent about this: show a **confidence interval / error band** around every forecast line, and display a rolling **backtested accuracy score** (e.g., "last 30-day forecast was within 6% of actual HRC price") so the accuracy claim is evidence-based, not asserted.
+- To maximize achievable accuracy: use ensemble of multiple models, retrain weekly on fresh data, and weight recent volatility more heavily (e.g., GARCH-style volatility adjustment) rather than one static formula.
+
+### 1. Tech stack
+- Frontend: React + Tailwind CSS, with charts via Recharts
+- Backend: Node.js/Express (or Python/FastAPI if easier for data fetching)
+- Database: SQLite or Replit DB for caching fetched prices and storing historical forecasts
+- Scheduled job (cron) to refresh live data every few hours
+
+### 2. Core cost model — include ALL of these factors
+Cold steel (cold-rolled coil) cost isn't just "steel price." Model it as a stack:
+
+**A. Raw materials (biggest chunk, ~35-45% of cost)**
+- Hot-rolled coil (HRC) price — use **North European HRC index** (e.g., Kallanish, MEPS, or Platts NW Europe HRC) as the benchmark, not US/Asia prices
+- Iron ore (62% Fe fines, Platts/SGX index) — Europe imports most of this, so add shipping-to-EU-port cost
+- Coking coal / metallurgical coal price — EU mills rely heavily on imports (Australia, US, Canada) since domestic coal mining has shrunk
+- Scrap steel price — **European scrap index (e.g., LME steel scrap, or Kallanish EU scrap)** — increasingly important since more EU mills are shifting to EAF (electric arc furnace) to cut emissions
+- Alloys: zinc (LME), tin, chromium, nickel for coated/stainless variants
+- Note: cold rolling adds ~15-25% on top of HRC via pickling, rolling, annealing, coating
+
+**B. Energy costs (~15-25% in Europe — higher than global average)**
+- **Electricity price**: use EU day-ahead wholesale price (ENTSO-E Transparency Platform — free API) plus country-specific industrial tariff/surcharges
+- **Natural gas price**: TTF (Title Transfer Facility) — the main European gas benchmark, highly volatile since 2022
+- **EU ETS carbon price**: cost per tonne CO2 (EU Emissions Trading System) — this is a *major* and growing EU-specific cost that most non-EU models ignore
+- **CBAM (Carbon Border Adjustment Mechanism)**: from 2026 this adds a real cost to imported steel from outside the EU — factor this in as it directly affects EU producer competitiveness and import-based cost comparisons
+
+**C. Labor (~10-15% typically in EU industrial mills — not 80-90%)**
+⚠️ Important correction: labor is usually **not** 80-90% of cost, even in Europe, at industrial cold-rolling scale. EU labor costs are among the highest globally (skilled labor, strong union agreements, high social-security overhead), so EU labor share runs slightly higher than Asia but still well under half of total cost. Use Eurostat labor cost index (per hour, manufacturing sector) as a live-ish reference, and build an **editable labor % slider** (suggest 10-18% default range for EU) rather than hardcoding a figure.
+
+**D. Transport & logistics (~5-15%, EU-specific factors)**
+- Intra-EU rail/truck freight rates (Germany, France, Italy, Poland corridors are key steel routes)
+- Rotterdam/Antwerp/Hamburg port handling and demurrage (main entry points for imported ore/coal)
+- Red Sea/Suez disruption surcharges (affects Asia-to-EU raw material shipping)
+- Fuel surcharge linked to Brent crude
+- EU carbon cost on transport (increasingly relevant under EU Green Deal)
+
+**E. Overheads & other hidden factors (~10-15%)**
+- Plant depreciation and maintenance (capex amortization)
+- Environmental compliance (EU has some of the strictest steel emissions rules — this is a real and rising cost line)
+- Insurance
+- EUR/USD exchange rate — raw materials are priced in USD globally, so EUR weakness directly raises input costs even if local prices haven't moved
+- Interest rates (ECB refinancing rate) — affects cost of carrying inventory
+- EU/national subsidies for green steel transition (hydrogen-based DRI plants, decarbonization grants) — can meaningfully offset costs for some producers
+- Anti-dumping duties on non-EU steel imports (China, Russia, Turkey)
+- Global supply-demand shocks: China overcapacity/export dumping, Russia-Ukraine impact on pig iron/pellet supply, energy crises
+- Seasonal demand (EU auto and construction sector cycles)
+- Inventory/warehousing cost
+
+**F. Margin & pricing**
+- Producer margin (industry benchmark ~5-12%)
+- Final ex-works / delivered price
+
+### 3. Live data sources to integrate (Europe-focused, free/public APIs where possible)
+- **Electricity price (EU)**: ENTSO-E Transparency Platform API (free, requires simple token registration) — day-ahead prices per country
+- **Natural gas (TTF)**: Trading Economics or Investing.com TTF futures (may need paid key; fallback to cached weekly value)
+- **EU ETS carbon price**: Trading Economics or EEX (European Energy Exchange) carbon futures
+- **HRC/scrap steel prices (Europe)**: Kallanish, MEPS International, or Trading Economics steel index (many EU-specific feeds are paid — plan for a fallback cached CSV updated manually/weekly if no free API is available)
+- **Iron ore & coking coal**: Trading Economics commodities endpoint (global benchmark, adjust for EU shipping cost)
+- **EUR/USD and other FX**: Frankfurter API (free, no key) or exchangerate-api.com
+- **Freight/shipping**: Freightos Baltic Index (FBX) for Asia-to-EU legs; fallback to static average if no free API
+- **Oil price (Brent, for fuel surcharge)**: EIA API or Alpha Vantage
+- **Eurostat labor cost index**: Eurostat's free public API (manufacturing sector, per country)
+- Build a fallback for every source: if a live API fails, rate-limits, or requires a paid key you don't have, use the last cached value with a clearly labeled "stale/estimated data" indicator — never silently fabricate numbers, and never let a missing data source silently corrupt the accuracy claims.
+
+### 4. Website features
+1. **Dashboard homepage** — live ticker of key inputs (HRC price, iron ore, energy, USD/local currency), auto-refreshing
+2. **Cost breakdown calculator** — interactive bar/pie chart showing % contribution of each factor (raw material, energy, labor, transport, overhead, margin), with sliders to adjust each assumption (e.g., labor %, freight distance, plant location)
+3. **Forecast chart** — line chart projecting cost per ton over 1/4/12 weeks, with a shaded confidence band that widens at longer horizons (be explicit in the UI: short-term forecasts are the ones targeting 90-95% accuracy; long-term ones are directional only)
+4. **Country selector (within EU)** — let user pick Germany, France, Italy, Poland, Spain, etc., to adjust for local electricity tariffs, labor cost index, and national subsidy schemes, since these vary a lot country to country within the EU
+5. **Manufacturer Pros & Cons panel** — static/editable content block summarizing:
+   - **Pros of cold steel manufacturing**: better surface finish, tighter tolerances, higher strength via strain hardening, strong demand from auto/appliance sectors, higher margins than hot-rolled
+   - **Cons**: high capital investment, energy-intensive, sensitive to raw material price swings, higher scrap generation, requires skilled maintenance labor, exposed to trade tariffs, environmental compliance costs rising (carbon regulations)
+6. **Data source & assumptions page** — clearly list every API used, refresh frequency, and formula/weightings used in the cost model, so users understand what's "live" vs "assumed"
+7. **Export report** — button to download the current cost breakdown + forecast as PDF/CSV
+
+### 5. Important accuracy disclaimer to build into the UI
+Add a visible note: "This tool provides a directional cost estimate based on publicly available indices and configurable assumptions. Actual mill-level costs vary by plant efficiency, contracts, and hedging. For financial/investment decisions, consult industry reports (CRU, Platts, Wood Mackenzie) or a qualified analyst."
+
+### 6. Suggested file structure
+```
+/client
+  /src
+    /components (Dashboard, CostBreakdown, ForecastChart, RegionSelector, ProsCons, Assumptions)
+    /hooks (useLiveData.js)
+/server
+  /routes (prices.js, forecast.js)
+  /services (fetchIronOre.js, fetchEnergy.js, fetchFX.js, cache.js)
+  /jobs (refreshCron.js)
+/data
+  fallback-prices.json
+```
+
+### 7. Build order (tell Replit to do this step by step)
+1. Scaffold React + Express project
+2. Build static cost-breakdown UI with mock/fallback data first
+3. Wire up one live API (start with currency exchange, it's free and reliable)
+4. Add remaining data sources with try/catch fallback to cached JSON
+5. Add sliders and recompute cost model in real time
+6. Add forecast chart with simple linear trend
+7. Add pros/cons and assumptions pages
+8. Add PDF/CSV export
+9. Style with Tailwind, make it responsive
+
+---
+
+**End of prompt — paste the above into Replit.**

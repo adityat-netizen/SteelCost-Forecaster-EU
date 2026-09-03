@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "SteelCost Forecaster – EU Edition"
+description = "An EU-focused cold-rolled steel cost forecasting dashboard with transparent market inputs, country adjustments, confidence-aware forecasts, and exportable reports for manufacturing teams."
+version = "1.0.0"
+id = "artifacts/steelcost-forecaster"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23490
+
+[services.development]
+run = "pnpm --filter @workspace/steelcost-forecaster run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/steelcost-forecaster", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/steelcost-forecaster/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23490"
+BASE_PATH = "/"

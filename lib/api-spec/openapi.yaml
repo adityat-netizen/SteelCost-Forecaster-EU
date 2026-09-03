@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: market
+    description: EU market inputs and forecast operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,68 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /market/overview:
+    get:
+      operationId: getMarketOverview
+      tags: [market]
+      summary: Get current EU steel market inputs
+      description: Returns the latest available inputs for a selected EU country, with freshness and source metadata.
+      parameters:
+        - name: country
+          in: query
+          required: false
+          schema:
+            type: string
+            default: Germany
+            enum: [Germany, France, Italy, Poland, Spain, Netherlands, Belgium]
+      responses:
+        "200":
+          description: Market overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketOverview"
+  /market/forecast:
+    get:
+      operationId: getMarketForecast
+      tags: [market]
+      summary: Get a directional production cost forecast
+      description: Returns forecast points with an uncertainty band that widens with the horizon.
+      parameters:
+        - name: country
+          in: query
+          required: false
+          schema:
+            type: string
+            default: Germany
+            enum: [Germany, France, Italy, Poland, Spain, Netherlands, Belgium]
+        - name: horizon
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+            default: 12
+      responses:
+        "200":
+          description: Forecast series
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketForecast"
+  /market/assumptions:
+    get:
+      operationId: getMarketAssumptions
+      tags: [market]
+      summary: Get model assumptions and source notes
+      responses:
+        "200":
+          description: Model assumptions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketAssumptions"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +97,121 @@ components:
           type: string
       required:
         - status
+    Freshness:
+      type: string
+      enum: [live, cached, estimated]
+    MarketInput:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        value:
+          type: number
+        unit:
+          type: string
+        freshness:
+          $ref: "#/components/schemas/Freshness"
+        source:
+          type: string
+        updatedAt:
+          type: string
+      required: [key, label, value, unit, freshness, source, updatedAt]
+    CountryAdjustment:
+      type: object
+      properties:
+        country:
+          type: string
+        electricityMultiplier:
+          type: number
+        laborMultiplier:
+          type: number
+        freightMultiplier:
+          type: number
+        subsidyNote:
+          type: string
+      required: [country, electricityMultiplier, laborMultiplier, freightMultiplier, subsidyNote]
+    MarketOverview:
+      type: object
+      properties:
+        country:
+          type: string
+        asOf:
+          type: string
+        inputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketInput"
+        adjustment:
+          $ref: "#/components/schemas/CountryAdjustment"
+        baseCostPerTon:
+          type: number
+        confidenceScore:
+          type: number
+        liveInputCount:
+          type: number
+        totalInputCount:
+          type: number
+      required: [country, asOf, inputs, adjustment, baseCostPerTon, confidenceScore, liveInputCount, totalInputCount]
+    ForecastPoint:
+      type: object
+      properties:
+        week:
+          type: number
+        label:
+          type: string
+        costPerTon:
+          type: number
+        lower:
+          type: number
+        upper:
+          type: number
+      required: [week, label, costPerTon, lower, upper]
+    MarketForecast:
+      type: object
+      properties:
+        country:
+          type: string
+        horizon:
+          type: number
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForecastPoint"
+        backtest:
+          type: object
+          properties:
+            score:
+              type: number
+            label:
+              type: string
+          required: [score, label]
+        methodology:
+          type: string
+      required: [country, horizon, points, backtest, methodology]
+    AssumptionItem:
+      type: object
+      properties:
+        label:
+          type: string
+        detail:
+          type: string
+        status:
+          $ref: "#/components/schemas/Freshness"
+        refresh:
+          type: string
+      required: [label, detail, status, refresh]
+    MarketAssumptions:
+      type: object
+      properties:
+        title:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssumptionItem"
+        disclaimer:
+          type: string
+      required: [title, items, disclaimer]
 

@@ -1,0 +1,1 @@
+- [Market API codegen compatibility](market-api-codegen-compatibility.md) — prefer numeric response fields when Orval would emit unsupported zod.int().
