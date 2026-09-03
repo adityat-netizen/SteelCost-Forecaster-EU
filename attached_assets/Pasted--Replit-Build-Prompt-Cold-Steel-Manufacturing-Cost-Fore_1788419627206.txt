@@ -1,0 +1,135 @@
+# Replit Build Prompt: Cold Steel Manufacturing Cost Forecast Website
+
+Copy everything below into Replit's AI Agent / Assistant to build the app.
+
+---
+
+## PROMPT TO PASTE INTO REPLIT
+
+Build a full-stack web app called **"SteelCost Forecaster – EU Edition"** that estimates and forecasts the total production cost of cold-rolled steel for the **European market**, broken into every major cost driver, using live market data where possible.
+
+### 0. Accuracy target — read this before building
+The user wants 90-95% prediction accuracy. Be upfront in the app about what that can realistically mean:
+- **Achievable**: 90-95% accuracy (i.e., forecast within ~5-10% of actual price) for **1-4 week ahead** forecasts on liquid, well-tracked inputs like HRC price, iron ore, and EUR/USD — using a proper statistical/ML model (ARIMA, Prophet, or gradient-boosted regression) trained on historical data, not a straight-line trend.
+- **Not realistically achievable**: 90-95% accuracy for 6-12 month forecasts, or through sudden-shock events (energy crises, war, tariff announcements, EU policy changes). No model, including ones used by CRU/Platts/Wood Mackenzie professionally, reliably hits that on long horizons.
+- Build the app to be transparent about this: show a **confidence interval / error band** around every forecast line, and display a rolling **backtested accuracy score** (e.g., "last 30-day forecast was within 6% of actual HRC price") so the accuracy claim is evidence-based, not asserted.
+- To maximize achievable accuracy: use ensemble of multiple models, retrain weekly on fresh data, and weight recent volatility more heavily (e.g., GARCH-style volatility adjustment) rather than one static formula.
+
+### 1. Tech stack
+- Frontend: React + Tailwind CSS, with charts via Recharts
+- Backend: Node.js/Express (or Python/FastAPI if easier for data fetching)
+- Database: SQLite or Replit DB for caching fetched prices and storing historical forecasts
+- Scheduled job (cron) to refresh live data every few hours
+
+### 2. Core cost model — include ALL of these factors
+Cold steel (cold-rolled coil) cost isn't just "steel price." Model it as a stack:
+
+**A. Raw materials (dominant cost — typically 70-80% of total cost)**
+- **Hot-rolled coil (HRC)** — the primary input, typically **70-80% of total cost** on its own. Priced off upstream scrap/iron ore and energy costs, plus EU import duties/tariffs on non-EU coil. Use NW European HRC index (Kallanish, MEPS, or Platts NW Europe) as the benchmark
+- **Zinc** (for galvanized lines, if integrated) — **LME-priced**: contracts are typically LME cash/settlement price + a supplier premium (covering processing, delivery, margin). This means zinc cost swings daily with global exchange trading independent of the plant's own business — model it as live LME zinc price + a configurable premium, not a flat number
+- Alloying elements for specialty grades (chromium, nickel) if producing stainless-adjacent lines
+- **Pickling acids** (hydrochloric or sulfuric) — used to strip mill scale before rolling; smaller line item but recurring and worth tracking
+- **Rolling oils/lubricants and emulsions**
+- **Refractories and work rolls** — rolls wear down and need regular replacement/grinding; a real recurring capex-adjacent cost often missed in simple models
+- Iron ore & coking coal (indirect, embedded in the HRC price you're buying rather than a separate line for a pure cold-rolling operation — only model separately if the plant is integrated upstream)
+
+**B. Utilities (~15-25% in Europe — higher than global average, biggest single utility is electricity)**
+- **Electricity**: the single biggest utility cost — rolling mills, annealing furnaces, and pickling lines are power-hungry. Use EU day-ahead wholesale price (ENTSO-E Transparency Platform — free API) plus country-specific industrial tariff/surcharges. European industrial electricity is a real competitiveness concern vs US/Asia, especially post-2022
+- **Natural gas**: TTF (Title Transfer Facility) benchmark — used for annealing/heat treatment furnaces; spiked hard in 2022 and hasn't fully normalized
+- **Water**: for cooling and pickling lines; include wastewater treatment/effluent compliance cost as a sub-line, not an afterthought
+- **Compressed air / inert gases** (nitrogen, hydrogen for bright annealing atmospheres) — smaller but recurring utility cost
+- **EU ETS carbon allowance cost (EUA price)**: this is one of the biggest structural cost pressures on EU steelmakers right now, not a minor add-on:
+  - Model as: (plant's net emissions after free allocation) × (live/historical EUA price per tonne CO2)
+  - EUA prices have run roughly €60-100/tonne CO2 in recent years; as of Aug 2026 around €82-85/tonne, up ~14% YoY on energy prices and geopolitical tensions
+  - Free allocation is phasing down 2026-2034 as CBAM phases in — build a **"free allocation %" input that the user can decrease year over year** to simulate this phase-down, since it structurally raises the effective carbon cost even if the EUA price itself stays flat
+  - Historical EUA data sources for the backend: Sandbag Carbon Price Viewer (sandbag.be, free, good for historical trend chart), Trading Economics/Investing.com/Yahoo Finance (free futures/CFD-tracked proxy data, daily), EEX (the actual primary auction venue — authoritative but often paywalled for bulk history), ICE Endex (main EUA futures exchange, commercial API). Use Trading Economics or Sandbag for the live app; note in the assumptions page that these are futures-tracked proxies, not official auction-clearing prices
+  - EUA price drivers to reflect in any forecast/sensitivity note: EU cap tightening (linear reduction factor), free allocation phase-down, Market Stability Reserve mechanism, gas price moves (gas-to-coal switching in power generation), weather (cold winters/low renewables output raise fossil generation), industrial output levels, and speculative positioning — flag that EUA and gas prices tend to move **together** in the wrong direction during energy shocks, compounding rather than offsetting
+
+**C. Labor (~5-12% typically in EU industrial mills given raw materials now dominate at 70-80% — not 80-90%)**
+⚠️ Important correction, reinforced by your manager's breakdown: with HRC alone at 70-80% of cost, labor's realistic share shrinks further, typically **5-12%** for an EU cold-rolling operation. EU labor costs are among the highest globally (skilled labor, strong union agreements, high social-security overhead), but that still doesn't push labor's *share* up when material and utility costs are this dominant. Use Eurostat labor cost index (per hour, manufacturing sector) as a live-ish reference, and build an **editable labor % slider** (suggest 5-12% default range for EU) rather than hardcoding a figure.
+
+**D. Transport & logistics (~5-15%, EU-specific factors)**
+- Intra-EU rail/truck freight rates (Germany, France, Italy, Poland corridors are key steel routes)
+- Rotterdam/Antwerp/Hamburg port handling and demurrage (main entry points for imported ore/coal)
+- Red Sea/Suez disruption surcharges (affects Asia-to-EU raw material shipping)
+- Fuel surcharge linked to Brent crude
+- EU carbon cost on transport (increasingly relevant under EU Green Deal)
+
+**E. Overheads & other hidden factors (~5-10%)**
+- Plant depreciation and maintenance (capex amortization) — including roll grinding/replacement cycles noted above
+- Insurance
+- EUR/USD exchange rate — raw materials are priced in USD globally, so EUR weakness directly raises input costs even if local prices haven't moved
+- Interest rates (ECB refinancing rate) — affects cost of carrying inventory
+- EU/national subsidies for green steel transition (hydrogen-based DRI plants, decarbonization grants) — can meaningfully offset costs for some producers
+- Anti-dumping duties on non-EU steel imports (China, Russia, Turkey)
+- Global supply-demand shocks: China overcapacity/export dumping, Russia-Ukraine impact on pig iron/pellet supply, energy crises
+- Seasonal demand (EU auto and construction sector cycles)
+- Inventory/warehousing cost
+
+**F. Margin & pricing**
+- Producer margin (industry benchmark ~5-12%)
+- Final ex-works / delivered price
+
+### 3. Live data sources to integrate (Europe-focused, free/public APIs where possible)
+- **Electricity price (EU)**: ENTSO-E Transparency Platform API (free, requires simple token registration) — day-ahead prices per country
+- **Natural gas (TTF)**: Trading Economics or Investing.com TTF futures (may need paid key; fallback to cached weekly value)
+- **EU ETS carbon price**: Trading Economics or EEX (European Energy Exchange) carbon futures
+- **HRC/scrap steel prices (Europe)**: Kallanish, MEPS International, or Trading Economics steel index (many EU-specific feeds are paid — plan for a fallback cached CSV updated manually/weekly if no free API is available)
+- **Iron ore & coking coal**: Trading Economics commodities endpoint (global benchmark, adjust for EU shipping cost)
+- **EU ETS carbon price (EUA)**: Sandbag Carbon Price Viewer (free, historical trend), Trading Economics or Investing.com (free daily futures-tracked proxy), EEX for authoritative auction data (often requires registration/paywall for bulk history)
+- **LME zinc price**: LME's own free delayed-price page, or Trading Economics/Investing.com for a free proxy feed — model as LME price + configurable supplier premium
+- **Freight/shipping**: Freightos Baltic Index (FBX) for Asia-to-EU legs; fallback to static average if no free API
+- **Oil price (Brent, for fuel surcharge)**: EIA API or Alpha Vantage
+- **Eurostat labor cost index**: Eurostat's free public API (manufacturing sector, per country)
+- Build a fallback for every source: if a live API fails, rate-limits, or requires a paid key you don't have, use the last cached value with a clearly labeled "stale/estimated data" indicator — never silently fabricate numbers, and never let a missing data source silently corrupt the accuracy claims.
+
+### 4. Website features
+1. **Dashboard homepage** — live ticker of key inputs (HRC price, iron ore, energy, USD/local currency), auto-refreshing
+2. **Cost breakdown calculator** — interactive bar/pie chart showing % contribution of each factor (raw material, energy, labor, transport, overhead, margin), with sliders to adjust each assumption (e.g., labor %, freight distance, plant location)
+3. **Forecast chart** — line chart projecting cost per ton over 1/4/12 weeks, with a shaded confidence band that widens at longer horizons (be explicit in the UI: short-term forecasts are the ones targeting 90-95% accuracy; long-term ones are directional only)
+4. **Country selector (within EU)** — let user pick Germany, France, Italy, Poland, Spain, etc., to adjust for local electricity tariffs, labor cost index, and national subsidy schemes, since these vary a lot country to country within the EU
+5. **Manufacturer Pros & Cons panel** — static/editable content block summarizing:
+   - **Pros of cold steel manufacturing**: better surface finish, tighter tolerances, higher strength via strain hardening, strong demand from auto/appliance sectors, higher margins than hot-rolled
+   - **Cons**: high capital investment, energy-intensive, sensitive to raw material price swings, higher scrap generation, requires skilled maintenance labor, exposed to trade tariffs, environmental compliance costs rising (carbon regulations)
+6. **"Live" status button under each price** — a small pill/button next to every fetched price (HRC, zinc, electricity, gas, EUA, FX) that visually communicates data freshness instead of just a timestamp:
+   - **Default state (faded/grey, label "Live")**: shown right after page load, before the button has "earned" live status — because the data was just fetched and hasn't proven a fresh refresh cycle yet, or the page is showing cached data while a fetch is in progress
+   - **Transitions to bright/active (green, label "Live")**: once the underlying data source's refresh interval has actually elapsed while the user is on the page — e.g., HRC/steel indices are weekly, so it only goes bright if a genuinely new weekly value has landed since the user arrived; electricity/FX are daily, so it can go bright once a new daily fetch completes during the session
+   - **Logic**: each price has its own `lastFetchedAt` and `sourceRefreshInterval` (daily for energy/FX, weekly for steel indices, monthly for labor index). On a timer (check every 30-60 sec client-side), compare `now - lastFetchedAt` against how close the *next* scheduled cron refresh is. If a fresh value has actually landed since the user opened the page, flip the button bright and briefly flash/pulse it once, then settle to steady bright
+   - **Hover/click behavior**: hovering or clicking shows a tooltip: "Last updated: [timestamp] · Source: [API name] · Next expected update: [timestamp]" — so the freshness claim is always explainable, not just a color
+   - **Important**: don't fake this — if a source is weekly and the user's session is only 10 minutes, the button should honestly stay faded, explaining why in the tooltip ("Steel index updates weekly; last update was 3 days ago"), rather than turning green just because time has passed with no real refresh
+   - Build this as a shared `<LiveIndicator>` component reused across the dashboard, cost breakdown, and forecast pages
+7. **Data source & assumptions page** — clearly list every API used, refresh frequency, and formula/weightings used in the cost model, so users understand what's "live" vs "assumed"
+8. **Export report** — button to download the current cost breakdown + forecast as PDF/CSV
+
+### 5. Important accuracy disclaimer to build into the UI
+Add a visible note: "This tool provides a directional cost estimate based on publicly available indices and configurable assumptions. Actual mill-level costs vary by plant efficiency, contracts, and hedging. For financial/investment decisions, consult industry reports (CRU, Platts, Wood Mackenzie) or a qualified analyst."
+
+### 6. Suggested file structure
+```
+/client
+  /src
+    /components (Dashboard, CostBreakdown, ForecastChart, RegionSelector, ProsCons, Assumptions)
+    /hooks (useLiveData.js)
+/server
+  /routes (prices.js, forecast.js)
+  /services (fetchIronOre.js, fetchEnergy.js, fetchFX.js, cache.js)
+  /jobs (refreshCron.js)
+/data
+  fallback-prices.json
+```
+
+### 7. Build order (tell Replit to do this step by step)
+1. Scaffold React + Express project
+2. Build static cost-breakdown UI with mock/fallback data first
+3. Wire up one live API (start with currency exchange, it's free and reliable)
+4. Add remaining data sources with try/catch fallback to cached JSON
+5. Add sliders and recompute cost model in real time
+6. Add forecast chart with simple linear trend
+7. Add pros/cons and assumptions pages
+8. Add the `<LiveIndicator>` faded→bright button component and wire it to real fetch timestamps
+9. Add PDF/CSV export
+10. Style with Tailwind, make it responsive
+
+---
+
+**End of prompt — paste the above into Replit.**
