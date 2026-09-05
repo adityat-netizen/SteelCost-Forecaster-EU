@@ -157,6 +157,8 @@ components:
           $ref: "#/components/schemas/Freshness"
         source:
           type: string
+        statusMessage:
+          type: string
         provenanceKind:
           type: string
           enum: [official, licensed_benchmark, proxy, assumption]
@@ -171,7 +173,7 @@ components:
           enum: [daily, weekly, monthly]
         nextExpectedUpdate:
           type: string
-      required: [key, label, value, unit, freshness, source, provenanceKind, provenanceNote, updatedAt, lastFetchedAt, sourceRefreshInterval, nextExpectedUpdate]
+      required: [key, label, value, unit, freshness, source, statusMessage, provenanceKind, provenanceNote, updatedAt, lastFetchedAt, sourceRefreshInterval, nextExpectedUpdate]
     CountryAdjustment:
       type: object
       properties:

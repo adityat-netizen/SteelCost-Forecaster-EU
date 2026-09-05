@@ -16,6 +16,7 @@ export interface MarketInput {
   unit: string;
   freshness: Freshness;
   source: string;
+  statusMessage: string;
   provenanceKind: MarketInputProvenanceKind;
   provenanceNote: string;
   updatedAt: string;

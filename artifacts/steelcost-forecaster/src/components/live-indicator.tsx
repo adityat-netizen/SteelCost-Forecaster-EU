@@ -21,6 +21,7 @@ function formatDateTime(value: string) {
 export function LiveIndicator({ input, sessionStartedAt }: LiveIndicatorProps) {
   const [hasFreshened, setHasFreshened] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const label = input.freshness === 'live' ? 'Live' : input.freshness === 'cached' ? 'Cached' : 'Estimated';
 
   useEffect(() => {
     const checkFreshness = () => {
@@ -41,15 +42,15 @@ export function LiveIndicator({ input, sessionStartedAt }: LiveIndicatorProps) {
         aria-label={`${input.label} live status`}
         aria-expanded={detailsOpen}
         onClick={() => setDetailsOpen((open) => !open)}
-        title={`Last updated: ${formatDateTime(input.lastFetchedAt)} · Source: ${input.source} · Next expected update: ${formatDateTime(input.nextExpectedUpdate)}`}
+          title={`${input.statusMessage} · Next expected update: ${formatDateTime(input.nextExpectedUpdate)}`}
         className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold transition-all duration-300 ${
-          hasFreshened
+          input.freshness === 'live' && hasFreshened
             ? 'border-accent/35 bg-accent/12 text-accent shadow-[0_0_0_3px_hsl(var(--accent)/.06)]'
             : 'border-border bg-secondary/55 text-muted-foreground'
         }`}
       >
-        {hasFreshened ? <Check size={10} /> : <Clock3 size={10} />}
-        Live
+        {input.freshness === 'live' && hasFreshened ? <Check size={10} /> : <Clock3 size={10} />}
+        {label}
       </button>
       {detailsOpen && (
         <div
@@ -59,6 +60,7 @@ export function LiveIndicator({ input, sessionStartedAt }: LiveIndicatorProps) {
           <div className="font-semibold text-foreground">{input.label}</div>
           <div className="mt-1">Last updated: {formatDateTime(input.lastFetchedAt)}</div>
           <div>Source: {input.source}</div>
+          <div className="mt-1 text-foreground/80">{input.statusMessage}</div>
           <div>Next expected update: {formatDateTime(input.nextExpectedUpdate)}</div>
           <div className="mt-1 font-mono uppercase tracking-[.08em] text-muted-foreground/75">
             {input.freshness} · {input.sourceRefreshInterval} cadence

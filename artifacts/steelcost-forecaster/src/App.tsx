@@ -74,13 +74,14 @@ function fallbackInput(
   lastFetchedAt: string,
   provenanceKind: MarketInput['provenanceKind'] = 'proxy',
   provenanceNote = 'Fallback reference — confirm before production use.',
+  statusMessage = 'Showing the last available value.',
 ): MarketInput {
   const last = new Date(lastFetchedAt);
   const next = new Date(last);
   if (sourceRefreshInterval === 'daily') next.setDate(next.getDate() + 1);
   if (sourceRefreshInterval === 'weekly') next.setDate(next.getDate() + 7);
   if (sourceRefreshInterval === 'monthly') next.setMonth(next.getMonth() + 1);
-  return { key, label, value, unit, freshness, source, provenanceKind, provenanceNote, updatedAt: lastFetchedAt, lastFetchedAt, sourceRefreshInterval, nextExpectedUpdate: next.toISOString() };
+  return { key, label, value, unit, freshness, source, provenanceKind, provenanceNote, updatedAt: lastFetchedAt, lastFetchedAt, sourceRefreshInterval, nextExpectedUpdate: next.toISOString(), statusMessage };
 }
 
 const FALLBACK_OVERVIEW: MarketOverview = {
@@ -153,11 +154,13 @@ const FALLBACK_ASSUMPTIONS: MarketAssumptions = {
   title: 'Model assumptions & source notes',
   disclaimer: 'SteelCost Forecaster is a directional decision-support model. It is not a price guarantee, financial advice, or a substitute for supplier quotations and plant-specific validation. Market conditions can move materially between refreshes.',
   items: [
-    { label: 'EAF scrap benchmark', detail: 'Regional ferrous scrap index, weighted to EU EAF capacity and delivered mill mix.', status: 'live', refresh: 'Daily · 08:00 CET' },
-    { label: 'Power cost pass-through', detail: 'Industrial day-ahead baseload with a country adjustment for network charges and typical load profile.', status: 'live', refresh: 'Hourly · rolling average' },
-    { label: 'Gas & carbon', detail: 'TTF gas and EUA settlement inputs, applied to the thermal portion of the melt and rolling route.', status: 'cached', refresh: 'Daily settlement' },
-    { label: 'Labour intensity', detail: 'Eurostat manufacturing wage index with an allowance for plant automation level.', status: 'estimated', refresh: 'Quarterly' },
-    { label: 'Freight & country factors', detail: 'Country multipliers reflect an indicative EU plant basket. They are not a quote for a specific lane.', status: 'estimated', refresh: 'Monthly review' },
+    { label: 'North Europe HRC', detail: 'Provider: EU HRC licensed benchmark feed via managed MARKET_HRC_FEED_URL and MARKET_HRC_API_KEY.', status: 'estimated', refresh: 'Weekly · fallback: last successful value, then maintained regional estimate' },
+    { label: 'LME zinc', detail: 'Provider: LME licensed zinc price feed via managed MARKET_LME_ZINC_FEED_URL and MARKET_LME_ZINC_API_KEY.', status: 'estimated', refresh: 'Daily · fallback: last successful value, then maintained LME reference' },
+    { label: 'Electricity', detail: 'Provider: ENTSO-E Transparency Platform day-ahead feed for the selected bidding zone.', status: 'estimated', refresh: 'Daily · fallback: last successful value, then maintained EU reference' },
+    { label: 'TTF gas & EUA carbon', detail: 'Providers: ICE Endex TTF and EUA benchmark feeds through managed feed URLs and credentials.', status: 'estimated', refresh: 'Daily · fallback: last successful value, then maintained reference' },
+    { label: 'EUR / USD & labour', detail: 'Providers: Frankfurter API and Eurostat lc_lci_lev manufacturing labour costs.', status: 'cached', refresh: 'Daily / monthly check · fallback: last successful value, then maintained reference' },
+    { label: 'Freight & Brent', detail: 'Providers: managed EU corridor freight feed and EIA Brent spot feed.', status: 'estimated', refresh: 'Monthly / daily · fallback: last successful value, then maintained reference' },
+    { label: 'Consumables & plant utilities', detail: 'Pickling acid, rolling oil, work rolls, water, and compressed air remain maintained estimates because no liquid official EU-wide feed exists.', status: 'estimated', refresh: 'Monthly model reference · fallback: maintained estimate' },
   ],
 };
 

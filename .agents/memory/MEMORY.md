@@ -1,2 +1,3 @@
 - [Market API codegen compatibility](market-api-codegen-compatibility.md) — prefer numeric response fields when Orval would emit unsupported zod.int().
 - [Live source freshness](live-source-freshness.md) — only a newer source timestamp earns an active live indicator; elapsed time alone does not.
+- [Market feed fallback semantics](market-feed-fallback-semantics.md) — persist only successful source observations; label unconfigured and stale fallbacks explicitly.

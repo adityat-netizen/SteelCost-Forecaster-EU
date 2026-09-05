@@ -8,6 +8,7 @@ import {
   GetMarketOverviewQueryParams,
   GetMarketOverviewResponse,
 } from "@workspace/api-zod";
+import { getLatestCachedObservation, resolveMarketFeeds } from "../lib/market-feeds";
 
 const router: IRouter = Router();
 
@@ -90,11 +91,23 @@ async function getEurUsd(log: MarketLogger) {
     const payload = (await response.json()) as { rates?: { USD?: number } };
     if (typeof payload.rates?.USD !== "number") throw new Error("Frankfurter response had no USD rate");
     const lastFetchedAt = dailyReference();
-    return { value: payload.rates.USD, freshness: "live" as const, source: "Frankfurter API", lastFetchedAt, sourceRefreshInterval: "daily" as const };
+    return { value: payload.rates.USD, freshness: "live" as const, source: "Frankfurter API", lastFetchedAt, sourceRefreshInterval: "daily" as const, statusMessage: "Frankfurter is queried daily; the latest successful daily value is shown." };
   } catch (error) {
     log.warn({ err: error }, "FX feed unavailable; using cached reference");
+    const cached = await getLatestCachedObservation("eurUsd");
+    if (cached) {
+      const lastFetchedAt = new Date(cached.sourceFetchedAt).toISOString();
+      return {
+        value: cached.value,
+        freshness: "cached" as const,
+        source: `${cached.source} · cached`,
+        lastFetchedAt,
+        sourceRefreshInterval: "daily" as const,
+        statusMessage: `Frankfurter is unavailable. Showing the last successful value fetched at ${lastFetchedAt}.`,
+      };
+    }
     const lastFetchedAt = new Date(Date.now() - 86_400_000).toISOString();
-    return { value: fallbackFx, freshness: "cached" as const, source: "Cached daily reference", lastFetchedAt, sourceRefreshInterval: "daily" as const };
+    return { value: fallbackFx, freshness: "cached" as const, source: "Maintained FX fallback", lastFetchedAt, sourceRefreshInterval: "daily" as const, statusMessage: "Frankfurter is unavailable and no successful value is cached. Showing a maintained FX fallback." };
   }
 }
 
@@ -109,6 +122,7 @@ function input(
   provenanceNote: string,
   lastFetchedAt: string,
   sourceRefreshInterval: "daily" | "weekly" | "monthly",
+  statusMessage: string,
 ) {
   return {
     key,
@@ -123,30 +137,32 @@ function input(
     lastFetchedAt,
     sourceRefreshInterval,
     nextExpectedUpdate: expectedUpdate(lastFetchedAt, sourceRefreshInterval),
+    statusMessage,
   };
 }
 
-export async function buildInputs(log: MarketLogger) {
+export async function buildInputs(log: MarketLogger, country: Country = "Germany") {
   const fx = await getEurUsd(log);
+  const feeds = await resolveMarketFeeds(log, country);
   const daily = dailyReference();
   const weekly = "2026-09-01T06:00:00.000Z";
   const monthly = "2026-09-01T06:00:00.000Z";
 
   return [
-    input("hrc", "North Europe HRC", 612, "€/t", "cached", "EU HRC benchmark · Kallanish / MEPS proxy", "proxy", "Confirm licensed benchmark access before production use.", weekly, "weekly"),
-    input("zinc", "LME zinc", 2680, "$/t", "estimated", "LME delayed-price proxy", "proxy", "Free delayed proxy; not a licensed real-time LME feed.", daily, "daily"),
-    input("picklingAcid", "Pickling acid", 38, "€/t", "estimated", "Regional chemical reference", "assumption", "Assumed regional consumables benchmark — pending confirmation.", monthly, "monthly"),
-    input("rollingOil", "Rolling oils & emulsions", 11, "€/t", "estimated", "Mill consumables reference", "assumption", "Assumed mill consumables benchmark — pending confirmation.", monthly, "monthly"),
-    input("workRolls", "Refractories & work rolls", 16, "€/t", "estimated", "Maintenance cost reference", "assumption", "Assumed maintenance benchmark — pending confirmation.", monthly, "monthly"),
-    input("electricity", "Industrial electricity", 86, "€/MWh", "estimated", "EU day-ahead reference · ENTSO-E proxy", "proxy", "ENTSO-E is the preferred official source; current value is a transparent proxy.", daily, "daily"),
-    input("ttf", "TTF natural gas", 34, "€/MWh", "estimated", "TTF weekly reference", "proxy", "Free market proxy; confirm licensed ICE Endex access before production use.", weekly, "weekly"),
-    input("water", "Water & wastewater", 3.5, "€/m³", "estimated", "Industrial utility reference", "assumption", "Assumed industrial utility rate — pending plant confirmation.", monthly, "monthly"),
-    input("compressedAir", "Compressed air & inert gases", 9, "€/t", "estimated", "Plant utility reference", "assumption", "Assumed plant utility rate — pending confirmation.", monthly, "monthly"),
-    input("carbon", "EU ETS allowance", 84, "€/tCO₂", "estimated", "EUA futures-tracked proxy", "proxy", "Free EUA proxy; confirm licensed ICE/EEX benchmark before production use.", daily, "daily"),
-    input("eurUsd", "EUR / USD", fx.value, "$/€", fx.freshness, fx.source, fx.freshness === "live" ? "official" : "proxy", fx.freshness === "live" ? "Public reference feed returned a current daily rate." : "Cached fallback because the public reference feed was unavailable.", fx.lastFetchedAt, fx.sourceRefreshInterval),
-    input("labor", "Manufacturing labor", 38.4, "€/h", "cached", "Eurostat manufacturing reference", "official", "Official statistical reference, not a plant-specific wage quote.", monthly, "monthly"),
-    input("freight", "EU corridor freight", 42, "€/t", "estimated", "EU rail / truck blend", "assumption", "Assumed corridor blend — pending lane and contract confirmation.", monthly, "monthly"),
-    input("brent", "Brent crude", 76, "$/bbl", "estimated", "EIA / Alpha Vantage proxy", "proxy", "Free market proxy used for fuel exposure only.", daily, "daily"),
+    input("hrc", "North Europe HRC", feeds.hrc.value, "€/t", feeds.hrc.freshness, feeds.hrc.source, "licensed_benchmark", feeds.hrc.statusMessage, feeds.hrc.lastFetchedAt, feeds.hrc.sourceRefreshInterval, feeds.hrc.statusMessage),
+    input("zinc", "LME zinc", feeds.zinc.value, "$/t", feeds.zinc.freshness, feeds.zinc.source, "licensed_benchmark", feeds.zinc.statusMessage, feeds.zinc.lastFetchedAt, feeds.zinc.sourceRefreshInterval, feeds.zinc.statusMessage),
+    input("picklingAcid", "Pickling acid", 38, "€/t", "estimated", "Maintained consumables reference", "assumption", "No official liquid feed configured; maintained reference shown.", monthly, "monthly", "Maintained estimate; no official liquid feed configured."),
+    input("rollingOil", "Rolling oils & emulsions", 11, "€/t", "estimated", "Maintained consumables reference", "assumption", "No official liquid feed configured; maintained reference shown.", monthly, "monthly", "Maintained estimate; no official liquid feed configured."),
+    input("workRolls", "Refractories & work rolls", 16, "€/t", "estimated", "Maintained consumables reference", "assumption", "No official liquid feed configured; maintained reference shown.", monthly, "monthly", "Maintained estimate; no official liquid feed configured."),
+    input("electricity", "Industrial electricity", feeds.electricity.value, "€/MWh", feeds.electricity.freshness, feeds.electricity.source, "official", feeds.electricity.statusMessage, feeds.electricity.lastFetchedAt, feeds.electricity.sourceRefreshInterval, feeds.electricity.statusMessage),
+    input("ttf", "TTF natural gas", feeds.ttf.value, "€/MWh", feeds.ttf.freshness, feeds.ttf.source, "licensed_benchmark", feeds.ttf.statusMessage, feeds.ttf.lastFetchedAt, feeds.ttf.sourceRefreshInterval, feeds.ttf.statusMessage),
+    input("water", "Water & wastewater", 3.5, "€/m³", "estimated", "Maintained utility reference", "assumption", "No official liquid feed configured; maintained reference shown.", monthly, "monthly", "Maintained estimate; no official liquid feed configured."),
+    input("compressedAir", "Compressed air & inert gases", 9, "€/t", "estimated", "Maintained utility reference", "assumption", "No official liquid feed configured; maintained reference shown.", monthly, "monthly", "Maintained estimate; no official liquid feed configured."),
+    input("carbon", "EU ETS allowance", feeds.carbon.value, "€/tCO₂", feeds.carbon.freshness, feeds.carbon.source, "licensed_benchmark", feeds.carbon.statusMessage, feeds.carbon.lastFetchedAt, feeds.carbon.sourceRefreshInterval, feeds.carbon.statusMessage),
+    input("eurUsd", "EUR / USD", fx.value, "$/€", fx.freshness, fx.source, fx.freshness === "live" ? "official" : "proxy", fx.freshness === "live" ? "Public reference feed returned a current daily rate." : fx.statusMessage, fx.lastFetchedAt, fx.sourceRefreshInterval, fx.statusMessage),
+    input("labor", "Manufacturing labor", feeds.labor.value, "€/h", feeds.labor.freshness, feeds.labor.source, "official", feeds.labor.statusMessage, feeds.labor.lastFetchedAt, feeds.labor.sourceRefreshInterval, feeds.labor.statusMessage),
+    input("freight", "EU corridor freight", feeds.freight.value, "€/t", feeds.freight.freshness, feeds.freight.source, "licensed_benchmark", feeds.freight.statusMessage, feeds.freight.lastFetchedAt, feeds.freight.sourceRefreshInterval, feeds.freight.statusMessage),
+    input("brent", "Brent crude", feeds.brent.value, "$/bbl", feeds.brent.freshness, feeds.brent.source, "licensed_benchmark", feeds.brent.statusMessage, feeds.brent.lastFetchedAt, feeds.brent.sourceRefreshInterval, feeds.brent.statusMessage),
   ];
 }
 
@@ -323,7 +339,7 @@ export function createSeriesAndValidation(inputs: Awaited<ReturnType<typeof buil
 router.get("/market/overview", async (req, res) => {
   const params = GetMarketOverviewQueryParams.parse(req.query);
   const country = params.country as Country;
-  const inputs = await buildInputs(req.log);
+  const inputs = await buildInputs(req.log, country);
   const adjustment = { country, ...countryAdjustments[country] };
   const validation = buildMarketValidation(inputs);
   const response = GetMarketOverviewResponse.parse({
@@ -343,7 +359,7 @@ router.get("/market/forecast", async (req, res) => {
   const params = GetMarketForecastQueryParams.parse(req.query);
   const country = params.country as Country;
   const horizon = params.horizon;
-  const inputs = await buildInputs(req.log);
+  const inputs = await buildInputs(req.log, country);
   const base = getBaseCost(inputs, country);
   const { series, validation } = createSeriesAndValidation(inputs, horizon);
   const points = createForecastPoints(base, horizon, inputs, country);
@@ -373,19 +389,24 @@ router.get("/market/backtest", async (req, res) => {
   res.json(await getBacktestSummary(params.country as Country));
 });
 
-router.get("/market/assumptions", (_req, res) => {
+router.get("/market/assumptions", async (req, res) => {
+  const inputs = await buildInputs(req.log);
+  const statusFor = (key: string, fallback: "live" | "cached" | "estimated") =>
+    inputs.find((item) => item.key === key)?.freshness ?? fallback;
   const response = GetMarketAssumptionsResponse.parse({
     title: "How the estimate is built",
     items: [
-      { label: "North Europe HRC", detail: "HRC is the dominant input in a pure cold-rolling route, typically 70–80% of the modeled tonne before plant-specific contracts and hedging. Kallanish, MEPS, and Platts are the preferred benchmark families.", status: "cached", refresh: "Weekly reference" },
-      { label: "LME zinc & consumables", detail: "Zinc is modeled as delayed LME proxy plus a supplier premium; pickling acid, rolling oils, and work rolls are tracked as recurring consumables.", status: "estimated", refresh: "Daily / monthly" },
-      { label: "Electricity", detail: "ENTSO-E Transparency Platform is the preferred day-ahead source, with a country tariff multiplier for industrial delivery.", status: "estimated", refresh: "Daily proxy" },
-      { label: "TTF gas & utilities", detail: "TTF gas is joined by water, wastewater, compressed air, and inert gases so smaller recurring utilities are not hidden.", status: "estimated", refresh: "Weekly / monthly" },
-      { label: "EUA & free allocation", detail: "Effective carbon cost uses net emissions after free allocation. The allocation percentage can be decreased year over year as CBAM phases in.", status: "estimated", refresh: "Daily proxy / scenario" },
-      { label: "FX conversion", detail: "EUR/USD is fetched from Frankfurter when available; a cached daily value is used if the public feed is unavailable.", status: "live", refresh: "Daily" },
-      { label: "Labor", detail: "Eurostat manufacturing labor is a configurable 5–12% share for a cold-rolling operation, not an assumed majority of cost.", status: "cached", refresh: "Monthly reference" },
-      { label: "Freight & Brent", detail: "EU rail/truck corridors, port handling, Red Sea surcharges, and Brent-linked fuel exposure are represented as a delivered freight estimate.", status: "estimated", refresh: "Monthly / daily proxy" },
-      { label: "Forecast bands", detail: "The forecast is directional and widens uncertainty across the 26-week / six-month horizon.", status: "estimated", refresh: "Recomputed on inputs" },
+      { label: "North Europe HRC", detail: "Dominant purchased input for a pure cold-rolling route. Provider: EU HRC licensed benchmark feed (MARKET_HRC_FEED_URL + managed MARKET_HRC_API_KEY). Cadence: weekly.", status: statusFor("hrc", "estimated"), refresh: "Weekly · fallback: last successful value, then maintained regional estimate" },
+      { label: "LME zinc", detail: "Zinc coating input. Provider: LME licensed zinc price feed (MARKET_LME_ZINC_FEED_URL + managed MARKET_LME_ZINC_API_KEY). Cadence: daily.", status: statusFor("zinc", "estimated"), refresh: "Daily · fallback: last successful value, then maintained LME reference" },
+      { label: "Electricity", detail: "Industrial power uses the ENTSO-E Transparency Platform day-ahead price for the selected bidding zone, then applies the country multiplier.", status: statusFor("electricity", "estimated"), refresh: "Daily · fallback: last successful value, then maintained EU reference" },
+      { label: "TTF natural gas", detail: "Thermal utility input. Provider: ICE Endex TTF benchmark feed (MARKET_TTF_FEED_URL + managed MARKET_TTF_API_KEY). Cadence: daily.", status: statusFor("ttf", "estimated"), refresh: "Daily · fallback: last successful value, then maintained TTF reference" },
+      { label: "EUA allowance", detail: "Carbon input before the model’s free-allocation scenario. Provider: ICE Endex EUA benchmark feed (MARKET_EUA_FEED_URL + managed MARKET_EUA_API_KEY). Cadence: daily.", status: statusFor("carbon", "estimated"), refresh: "Daily · fallback: last successful value, then maintained EUA reference" },
+      { label: "EUR / USD", detail: "FX conversion for USD-denominated zinc and Brent. Provider: Frankfurter API. Cadence: daily.", status: statusFor("eurUsd", "cached"), refresh: "Daily · fallback: last successful value, then maintained reference" },
+      { label: "Manufacturing labour", detail: "Provider: Eurostat lc_lci_lev, EU27 manufacturing labour cost level in EUR. Cadence: annual publication consumed monthly.", status: statusFor("labor", "cached"), refresh: "Monthly check · fallback: last successful value, then maintained EU reference" },
+      { label: "EU corridor freight", detail: "Delivered freight input. Provider: EU corridor freight managed feed (MARKET_FREIGHT_FEED_URL + managed MARKET_FREIGHT_API_KEY). Cadence: monthly.", status: statusFor("freight", "estimated"), refresh: "Monthly · fallback: last successful value, then maintained corridor estimate" },
+      { label: "Brent crude", detail: "Fuel exposure input. Provider: EIA Brent spot feed (MARKET_BRENT_FEED_URL + managed MARKET_BRENT_API_KEY). Cadence: daily.", status: statusFor("brent", "estimated"), refresh: "Daily · fallback: last successful value, then maintained Brent reference" },
+      { label: "Consumables & plant utilities", detail: "Pickling acid, rolling oil, work rolls, water, and compressed air remain maintained estimates because no liquid official EU-wide feed exists for these plant-specific inputs.", status: "estimated", refresh: "Monthly model reference · fallback: maintained estimate" },
+      { label: "Forecast bands", detail: "The forecast is directional and widens uncertainty from roughly 2% now to 10% at 12 weeks.", status: "estimated", refresh: "Recomputed on inputs" },
       { label: "Embedded upstream inputs", detail: "Iron ore and met coal are embedded in purchased HRC for a pure cold-rolling route and are not double-counted as separate costs.", status: "estimated", refresh: "Model rule" },
     ],
     disclaimer: "This tool provides a directional cost estimate based on publicly available indices and configurable assumptions. Actual mill-level costs vary by plant efficiency, contracts, and hedging. For financial or investment decisions, consult CRU, Platts, Wood Mackenzie, or a qualified analyst.",

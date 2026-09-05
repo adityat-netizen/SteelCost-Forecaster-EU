@@ -135,6 +135,7 @@ async function storeRefresh(now: Date) {
 
   await db.transaction(async (tx) => {
     for (const input of inputs) {
+      if (input.freshness !== "live") continue;
       await tx
         .insert(marketObservationsTable)
         .values({
