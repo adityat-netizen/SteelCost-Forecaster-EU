@@ -7,17 +7,21 @@
  */
 
 export * from './assumptionItem';
+export * from './backtestWindow';
+export * from './backtestWindowStatus';
 export * from './countryAdjustment';
 export * from './forecastPoint';
 export * from './freshness';
+export * from './getMarketBacktestCountry';
+export * from './getMarketBacktestParams';
 export * from './getMarketForecastCountry';
 export * from './getMarketForecastParams';
 export * from './getMarketOverviewCountry';
 export * from './getMarketOverviewParams';
 export * from './healthStatus';
 export * from './marketAssumptions';
+export * from './marketBacktest';
 export * from './marketForecast';
-export * from './marketForecastBacktest';
 export * from './marketInput';
 export * from './marketInputSourceRefreshInterval';
 export * from './marketOverview';

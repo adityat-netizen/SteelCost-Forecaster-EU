@@ -76,6 +76,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MarketForecast"
+  /market/backtest:
+    get:
+      operationId: getMarketBacktest
+      tags: [market]
+      summary: Get rolling forecast backtest metrics
+      description: Returns error metrics calculated only from matured forecast snapshots and complete historical source observations.
+      parameters:
+        - name: country
+          in: query
+          required: false
+          schema:
+            type: string
+            default: Germany
+            enum: [Germany, France, Italy, Poland, Spain, Netherlands, Belgium]
+      responses:
+        "200":
+          description: Historical forecast accuracy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketBacktest"
   /market/assumptions:
     get:
       operationId: getMarketAssumptions
@@ -187,16 +208,47 @@ components:
           items:
             $ref: "#/components/schemas/ForecastPoint"
         backtest:
-          type: object
-          properties:
-            score:
-              type: number
-            label:
-              type: string
-          required: [score, label]
+          $ref: "#/components/schemas/MarketBacktest"
         methodology:
           type: string
       required: [country, horizon, points, backtest, methodology]
+    BacktestWindow:
+      type: object
+      properties:
+        windowDays:
+          type: number
+        windowStart:
+          type: string
+        windowEnd:
+          type: string
+        observationCount:
+          type: number
+        meanAbsolutePercentageError:
+          type: ["number", "null"]
+        medianAbsolutePercentageError:
+          type: ["number", "null"]
+        bandCoveragePercent:
+          type: ["number", "null"]
+        status:
+          type: string
+          enum: [ready, insufficient]
+      required: [windowDays, windowStart, windowEnd, observationCount, meanAbsolutePercentageError, medianAbsolutePercentageError, bandCoveragePercent, status]
+    MarketBacktest:
+      type: object
+      properties:
+        generatedAt:
+          type: string
+        sampleWindow:
+          type: string
+        observationCount:
+          type: number
+        rolling30:
+          $ref: "#/components/schemas/BacktestWindow"
+        rolling90:
+          $ref: "#/components/schemas/BacktestWindow"
+        errorBandMethodology:
+          type: string
+      required: [generatedAt, sampleWindow, observationCount, rolling30, rolling90, errorBandMethodology]
     AssumptionItem:
       type: object
       properties:
@@ -221,4 +273,3 @@ components:
         disclaimer:
           type: string
       required: [title, items, disclaimer]
-

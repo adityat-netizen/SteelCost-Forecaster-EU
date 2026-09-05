@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import {
   GetMarketAssumptionsResponse,
+  GetMarketBacktestQueryParams,
   GetMarketForecastQueryParams,
   GetMarketForecastResponse,
   GetMarketOverviewQueryParams,
@@ -9,7 +10,7 @@ import {
 
 const router: IRouter = Router();
 
-type Country = "Germany" | "France" | "Italy" | "Poland" | "Spain" | "Netherlands" | "Belgium";
+export type Country = "Germany" | "France" | "Italy" | "Poland" | "Spain" | "Netherlands" | "Belgium";
 
 const countryAdjustments: Record<Country, {
   electricityMultiplier: number;
@@ -63,8 +64,6 @@ const countryAdjustments: Record<Country, {
 
 const fallbackFx = 1.17;
 
-type RequestLike = Parameters<Parameters<IRouter["get"]>[1]>[0];
-
 function expectedUpdate(lastFetchedAt: string, interval: "daily" | "weekly" | "monthly") {
   const next = new Date(lastFetchedAt);
   if (interval === "daily") next.setUTCDate(next.getUTCDate() + 1);
@@ -79,7 +78,9 @@ function dailyReference(now = new Date()) {
   return reference.toISOString();
 }
 
-async function getEurUsd(req: Parameters<Parameters<IRouter["get"]>[1]>[0]) {
+export type MarketLogger = { warn: (obj: unknown, msg: string) => void };
+
+async function getEurUsd(log: MarketLogger) {
   try {
     const response = await fetch("https://api.frankfurter.app/latest?from=EUR&to=USD", {
       signal: AbortSignal.timeout(1800),
@@ -90,7 +91,7 @@ async function getEurUsd(req: Parameters<Parameters<IRouter["get"]>[1]>[0]) {
     const lastFetchedAt = dailyReference();
     return { value: payload.rates.USD, freshness: "live" as const, source: "Frankfurter API", lastFetchedAt, sourceRefreshInterval: "daily" as const };
   } catch (error) {
-    req.log.warn({ err: error }, "FX feed unavailable; using cached reference");
+    log.warn({ err: error }, "FX feed unavailable; using cached reference");
     const lastFetchedAt = new Date(Date.now() - 86_400_000).toISOString();
     return { value: fallbackFx, freshness: "cached" as const, source: "Cached daily reference", lastFetchedAt, sourceRefreshInterval: "daily" as const };
   }
@@ -120,8 +121,8 @@ function input(
   };
 }
 
-async function buildInputs(req: RequestLike) {
-  const fx = await getEurUsd(req);
+export async function buildInputs(log: MarketLogger) {
+  const fx = await getEurUsd(log);
   const daily = dailyReference();
   const weekly = "2026-09-01T06:00:00.000Z";
   const monthly = "2026-09-01T06:00:00.000Z";
@@ -144,7 +145,7 @@ async function buildInputs(req: RequestLike) {
   ];
 }
 
-function getBaseCost(inputs: Awaited<ReturnType<typeof buildInputs>>, country: Country) {
+export function getBaseCost(inputs: Awaited<ReturnType<typeof buildInputs>>, country: Country) {
   const adjustment = countryAdjustments[country];
   const find = (key: string) => inputs.find((input) => input.key === key)?.value ?? 0;
   const fx = find("eurUsd") || fallbackFx;
@@ -158,10 +159,27 @@ function getBaseCost(inputs: Awaited<ReturnType<typeof buildInputs>>, country: C
   return Math.round(subtotal * 1.08);
 }
 
+export const COUNTRIES = ["Germany", "France", "Italy", "Poland", "Spain", "Netherlands", "Belgium"] as const;
+
+export function createForecastPoints(base: number, horizon: number) {
+  return Array.from({ length: horizon + 1 }, (_, week) => {
+    const trend = 1 + week * 0.0024 + Math.sin(week * 0.82) * 0.006;
+    const uncertainty = 0.018 + week * 0.0065;
+    const costPerTon = Math.round(base * trend);
+    return {
+      week,
+      label: week === 0 ? "Now" : `W${week}`,
+      costPerTon,
+      lower: Math.round(costPerTon * (1 - uncertainty)),
+      upper: Math.round(costPerTon * (1 + uncertainty)),
+    };
+  });
+}
+
 router.get("/market/overview", async (req, res) => {
   const params = GetMarketOverviewQueryParams.parse(req.query);
   const country = params.country as Country;
-  const inputs = await buildInputs(req);
+  const inputs = await buildInputs(req.log);
   const adjustment = { country, ...countryAdjustments[country] };
   const response = GetMarketOverviewResponse.parse({
     country,
@@ -180,31 +198,25 @@ router.get("/market/forecast", async (req, res) => {
   const params = GetMarketForecastQueryParams.parse(req.query);
   const country = params.country as Country;
   const horizon = params.horizon;
-  const inputs = await buildInputs(req);
+  const inputs = await buildInputs(req.log);
   const base = getBaseCost(inputs, country);
-  const points = Array.from({ length: horizon + 1 }, (_, week) => {
-    const trend = 1 + week * 0.0024 + Math.sin(week * 0.82) * 0.006;
-    const uncertainty = 0.018 + week * 0.0065;
-    const costPerTon = Math.round(base * trend);
-    return {
-      week,
-      label: week === 0 ? "Now" : `W${week}`,
-      costPerTon,
-      lower: Math.round(costPerTon * (1 - uncertainty)),
-      upper: Math.round(costPerTon * (1 + uncertainty)),
-    };
-  });
+  const points = createForecastPoints(base, horizon);
+  const { getBacktestSummary } = await import("../jobs/market-refresh");
+  const backtest = await getBacktestSummary(country);
   const response = GetMarketForecastResponse.parse({
     country,
     horizon,
     points,
-    backtest: {
-      score: 6.2,
-      label: "Last 30-day HRC forecast error",
-    },
+    backtest,
     methodology: "Weighted directional ensemble led by North Europe HRC, with utilities, EUA free-allocation exposure, FX, consumables, and freight sensitivities. Bands widen with horizon and do not model shock events.",
   });
   res.json(response);
+});
+
+router.get("/market/backtest", async (req, res) => {
+  const params = GetMarketBacktestQueryParams.parse(req.query);
+  const { getBacktestSummary } = await import("../jobs/market-refresh");
+  res.json(await getBacktestSummary(params.country as Country));
 });
 
 router.get("/market/assumptions", (_req, res) => {

@@ -65,7 +65,6 @@ export const getMarketForecastQueryHorizonDefault = 12;
 export const getMarketForecastQueryHorizonMax = 12;
 
 
-
 export const GetMarketForecastQueryParams = zod.object({
   "country": zod.enum(['Germany', 'France', 'Italy', 'Poland', 'Spain', 'Netherlands', 'Belgium']).default(getMarketForecastQueryCountryDefault),
   "horizon": zod.coerce.number().int().min(1).max(getMarketForecastQueryHorizonMax).default(getMarketForecastQueryHorizonDefault)
@@ -82,13 +81,39 @@ export const GetMarketForecastResponse = zod.object({
   "upper": zod.number()
 })),
   "backtest": zod.object({
-  "score": zod.number(),
-  "label": zod.string()
+  "generatedAt": zod.string(),
+  "sampleWindow": zod.string(),
+  "observationCount": zod.number(),
+  "rolling30": zod.object({
+  "windowDays": zod.number(),
+  "windowStart": zod.string(),
+  "windowEnd": zod.string(),
+  "observationCount": zod.number(),
+  "meanAbsolutePercentageError": zod.number().nullable(),
+  "medianAbsolutePercentageError": zod.number().nullable(),
+  "bandCoveragePercent": zod.number().nullable(),
+  "status": zod.enum(['ready', 'insufficient'])
+}),
+  "rolling90": zod.object({
+  "windowDays": zod.number(),
+  "windowStart": zod.string(),
+  "windowEnd": zod.string(),
+  "observationCount": zod.number(),
+  "meanAbsolutePercentageError": zod.number().nullable(),
+  "medianAbsolutePercentageError": zod.number().nullable(),
+  "bandCoveragePercent": zod.number().nullable(),
+  "status": zod.enum(['ready', 'insufficient'])
+}),
+  "errorBandMethodology": zod.string()
 }),
   "methodology": zod.string()
 })
 
-
+/**
+ * Returns error metrics calculated only from matured forecast snapshots and complete historical source observations.
+ * @summary Get rolling forecast backtest metrics
+ */
+export const getMarketBacktestQueryCountryDefault = `Germany`;
 /**
  * @summary Get model assumptions and source notes
  */
@@ -104,3 +129,33 @@ export const GetMarketAssumptionsResponse = zod.object({
 })
 
 
+export const GetMarketBacktestQueryParams = zod.object({
+  "country": zod.enum(['Germany', 'France', 'Italy', 'Poland', 'Spain', 'Netherlands', 'Belgium']).default(getMarketBacktestQueryCountryDefault)
+})
+
+export const GetMarketBacktestResponse = zod.object({
+  "generatedAt": zod.string(),
+  "sampleWindow": zod.string(),
+  "observationCount": zod.number(),
+  "rolling30": zod.object({
+  "windowDays": zod.number(),
+  "windowStart": zod.string(),
+  "windowEnd": zod.string(),
+  "observationCount": zod.number(),
+  "meanAbsolutePercentageError": zod.number().nullable(),
+  "medianAbsolutePercentageError": zod.number().nullable(),
+  "bandCoveragePercent": zod.number().nullable(),
+  "status": zod.enum(['ready', 'insufficient'])
+}),
+  "rolling90": zod.object({
+  "windowDays": zod.number(),
+  "windowStart": zod.string(),
+  "windowEnd": zod.string(),
+  "observationCount": zod.number(),
+  "meanAbsolutePercentageError": zod.number().nullable(),
+  "medianAbsolutePercentageError": zod.number().nullable(),
+  "bandCoveragePercent": zod.number().nullable(),
+  "status": zod.enum(['ready', 'insufficient'])
+}),
+  "errorBandMethodology": zod.string()
+})

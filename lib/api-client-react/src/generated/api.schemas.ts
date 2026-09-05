@@ -67,16 +67,12 @@ export interface ForecastPoint {
   upper: number;
 }
 
-export type MarketForecastBacktest = {
-  score: number;
-  label: string;
-};
-
+export type BacktestWindowStatus = typeof BacktestWindowStatus[keyof typeof BacktestWindowStatus];
 export interface MarketForecast {
   country: string;
   horizon: number;
   points: ForecastPoint[];
-  backtest: MarketForecastBacktest;
+  backtest: MarketBacktest;
   methodology: string;
 }
 
@@ -132,3 +128,47 @@ export const GetMarketForecastCountry = {
   Belgium: 'Belgium',
 } as const;
 
+export type GetMarketBacktestParams = {
+country?: GetMarketBacktestCountry;
+};
+
+
+export interface BacktestWindow {
+  windowDays: number;
+  windowStart: string;
+  windowEnd: string;
+  observationCount: number;
+  /** @nullable */
+  meanAbsolutePercentageError: number | null;
+  /** @nullable */
+  medianAbsolutePercentageError: number | null;
+  /** @nullable */
+  bandCoveragePercent: number | null;
+  status: BacktestWindowStatus;
+}
+
+export const GetMarketBacktestCountry = {
+  Germany: 'Germany',
+  France: 'France',
+  Italy: 'Italy',
+  Poland: 'Poland',
+  Spain: 'Spain',
+  Netherlands: 'Netherlands',
+  Belgium: 'Belgium',
+} as const;
+
+export type GetMarketBacktestCountry = typeof GetMarketBacktestCountry[keyof typeof GetMarketBacktestCountry];
+
+export const BacktestWindowStatus = {
+  ready: 'ready',
+  insufficient: 'insufficient',
+} as const;
+
+export interface MarketBacktest {
+  generatedAt: string;
+  sampleWindow: string;
+  observationCount: number;
+  rolling30: BacktestWindow;
+  rolling90: BacktestWindow;
+  errorBandMethodology: string;
+}

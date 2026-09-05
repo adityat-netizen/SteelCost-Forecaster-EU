@@ -16,10 +16,12 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  GetMarketBacktestParams,
   GetMarketForecastParams,
   GetMarketOverviewParams,
   HealthStatus,
   MarketAssumptions,
+  MarketBacktest,
   MarketForecast,
   MarketOverview
 } from './api.schemas';
@@ -287,6 +289,91 @@ export function useGetMarketForecast<TData = Awaited<ReturnType<typeof getMarket
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetMarketForecastQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetMarketBacktestUrl = (params?: GetMarketBacktestParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/market/backtest?${stringifiedParams}` : `/api/market/backtest`
+}
+
+/**
+ * Returns error metrics calculated only from matured forecast snapshots and complete historical source observations.
+ * @summary Get rolling forecast backtest metrics
+ */
+export const getMarketBacktest = async (params?: GetMarketBacktestParams, options?: Parameters<typeof customFetch>[1]): Promise<MarketBacktest> => {
+
+  return customFetch<MarketBacktest>(getGetMarketBacktestUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMarketBacktestQueryKey = (params?: GetMarketBacktestParams,) => {
+    return [
+    `/api/market/backtest`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetMarketBacktestQueryOptions = <TData = Awaited<ReturnType<typeof getMarketBacktest>>, TError = ErrorType<unknown>>(params?: GetMarketBacktestParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMarketBacktest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMarketBacktestQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMarketBacktest>>> = ({ signal }) => getMarketBacktest(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMarketBacktest>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMarketBacktestQueryResult = NonNullable<Awaited<ReturnType<typeof getMarketBacktest>>>
+export type GetMarketBacktestQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get rolling forecast backtest metrics
+ */
+
+export function useGetMarketBacktest<TData = Awaited<ReturnType<typeof getMarketBacktest>>, TError = ErrorType<unknown>>(
+ params?: GetMarketBacktestParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMarketBacktest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMarketBacktestQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

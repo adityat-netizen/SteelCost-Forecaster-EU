@@ -6,12 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ForecastPoint } from './forecastPoint';
-import type { MarketForecastBacktest } from './marketForecastBacktest';
+import type { MarketBacktest } from './marketBacktest';
 
 export interface MarketForecast {
   country: string;
   horizon: number;
   points: ForecastPoint[];
-  backtest: MarketForecastBacktest;
+  backtest: MarketBacktest;
   methodology: string;
 }

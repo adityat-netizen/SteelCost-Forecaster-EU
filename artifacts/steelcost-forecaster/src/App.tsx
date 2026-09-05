@@ -26,14 +26,17 @@ import {
 } from 'lucide-react';
 import {
   getGetMarketAssumptionsQueryKey,
+  getGetMarketBacktestQueryKey,
   getGetMarketForecastQueryKey,
   getGetMarketOverviewQueryKey,
   getHealthCheckQueryKey,
   type MarketAssumptions,
+  type MarketBacktest,
   type MarketForecast,
   type MarketInput,
   type MarketOverview,
   useGetMarketAssumptions,
+  useGetMarketBacktest,
   useGetMarketForecast,
   useGetMarketOverview,
   useHealthCheck,
@@ -103,7 +106,14 @@ const FALLBACK_OVERVIEW: MarketOverview = {
 const FALLBACK_FORECAST: MarketForecast = {
   country: 'Germany',
   horizon: 8,
-  backtest: { score: 79, label: 'Good directional fit' },
+  backtest: {
+    generatedAt: '2026-09-03T06:00:00.000Z',
+    sampleWindow: 'Rolling target dates; only matured forecasts with complete source observations are included.',
+    observationCount: 0,
+    rolling30: { windowDays: 30, windowStart: '2026-08-04T00:00:00.000Z', windowEnd: '2026-09-03T00:00:00.000Z', observationCount: 0, meanAbsolutePercentageError: null, medianAbsolutePercentageError: null, bandCoveragePercent: null, status: 'insufficient' },
+    rolling90: { windowDays: 90, windowStart: '2026-06-05T00:00:00.000Z', windowEnd: '2026-09-03T00:00:00.000Z', observationCount: 0, meanAbsolutePercentageError: null, medianAbsolutePercentageError: null, bandCoveragePercent: null, status: 'insufficient' },
+    errorBandMethodology: 'Mean and median absolute percentage error are calculated on matured forecast snapshots. Band coverage is the share of those outcomes inside the published lower/upper interval.',
+  },
   methodology: 'Weighted EAF cost model with energy pass-through and an expanding uncertainty band.',
   points: [
     { week: 0, label: 'Now', costPerTon: 1048, lower: 1026, upper: 1072 },
@@ -383,7 +393,7 @@ function ForecastChart({ forecast, inputs, sessionStartedAt }: { forecast: Marke
     <section className="panel overflow-hidden">
        <div className="panel-header flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Directional outlook</div><h2 className="mt-1 font-display text-base font-semibold">Cost forecast with uncertainty</h2></div><div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground"><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-primary" />Expected</span><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-accent/20" />Range</span>{inputs.filter((input) => ['hrc', 'electricity', 'carbon'].includes(input.key)).map((input) => <LiveIndicator key={input.key} input={input} sessionStartedAt={sessionStartedAt} />)}</div></div>
       <div className="p-3 pt-5 sm:p-5">
-         <div className="mb-2 flex items-start justify-between"><div><div className="data-mono text-2xl font-semibold">{euro.format(chart.points[0]?.costPerTon ?? 0)}<span className="ml-1 text-xs font-normal text-muted-foreground">/ t today</span></div><div className="mt-1 flex items-center gap-1 text-xs text-destructive"><ArrowUpRight size={13} />{chart.points.length > 1 ? `${euro.format((chart.points.at(-1)?.costPerTon ?? 0) - (chart.points[0]?.costPerTon ?? 0))} by horizon` : 'Awaiting horizon'}</div></div><div className="rounded-sm border border-border bg-secondary/45 px-3 py-2 text-right"><div className="label-caps text-muted-foreground">Backtest error</div><div data-testid="text-backtest-score" className="data-mono mt-1 text-sm font-semibold text-accent">{forecast.backtest.score}<span className="text-[10px] font-normal text-muted-foreground">%</span></div></div></div>
+        <div className="mb-2 flex items-start justify-between"><div><div className="data-mono text-2xl font-semibold">{euro.format(chart.points[0]?.costPerTon ?? 0)}<span className="ml-1 text-xs font-normal text-muted-foreground">/ t today</span></div><div className="mt-1 flex items-center gap-1 text-xs text-destructive"><ArrowUpRight size={13} />{chart.points.length > 1 ? `${euro.format((chart.points.at(-1)?.costPerTon ?? 0) - (chart.points[0]?.costPerTon ?? 0))} by horizon` : 'Awaiting horizon'}</div></div><div className="rounded-sm border border-border bg-secondary/45 px-3 py-2 text-right"><div className="label-caps text-muted-foreground">30-day error</div><div data-testid="text-backtest-score" className="data-mono mt-1 text-sm font-semibold text-accent">{forecast.backtest.rolling30.meanAbsolutePercentageError === null ? 'Awaiting' : `${forecast.backtest.rolling30.meanAbsolutePercentageError.toFixed(1)}%`}</div></div></div>
         <div className="overflow-x-auto"><svg data-testid="chart-forecast" className="mt-3 min-w-[640px]" viewBox="0 0 760 280" role="img" aria-label="Forecast cost chart with uncertainty range">
           <g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1="24" y1="32" x2="736" y2="32" /><line x1="24" y1="98" x2="736" y2="98" /><line x1="24" y1="164" x2="736" y2="164" /><line x1="24" y1="228" x2="736" y2="228" /></g>
           <polygon points={chart.band} fill="hsl(var(--accent) / .13)" />
@@ -393,6 +403,33 @@ function ForecastChart({ forecast, inputs, sessionStartedAt }: { forecast: Marke
         </svg></div>
         <div className="mt-1 flex items-start gap-2 border-t border-border/70 pt-3 text-[11px] leading-5 text-muted-foreground"><Info size={13} className="mt-0.5 shrink-0" />The shaded range widens with time. Treat the direction as a planning signal and validate near-term orders with suppliers.</div>
       </div>
+    </section>
+  );
+}
+
+function BacktestEvidence({ backtest }: { backtest: MarketBacktest }) {
+  const windows = [backtest.rolling30, backtest.rolling90];
+  const dateRange = (windowStart: string, windowEnd: string) => `${formatDate(windowStart)} – ${formatDate(windowEnd)}`;
+  return (
+    <section data-testid="panel-backtest-evidence" className="panel overflow-hidden">
+      <div className="panel-header flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div><div className="label-caps text-muted-foreground">Evidence ledger</div><h2 className="mt-1 font-display text-base font-semibold">Forecast accuracy from observed outcomes</h2></div>
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Database size={14} className="text-accent" />{backtest.observationCount} resolved observations · rolling 90 days</div>
+      </div>
+      <div className="grid gap-3 p-5 md:grid-cols-2">
+        {windows.map((window) => (
+          <div data-testid={`backtest-window-${window.windowDays}`} key={window.windowDays} className="rounded-sm border border-border bg-secondary/35 p-4">
+            <div className="flex items-start justify-between gap-3"><div><div className="label-caps text-muted-foreground">Rolling {window.windowDays}-day window</div><div className="mt-1 text-[11px] text-muted-foreground">{dateRange(window.windowStart, window.windowEnd)}</div></div><span className={`rounded-sm px-2 py-1 font-mono text-[10px] ${window.status === 'ready' ? 'bg-accent/10 text-accent' : 'bg-primary/10 text-primary'}`}>{window.status === 'ready' ? 'Measured' : 'Building'}</span></div>
+            <div className="mt-5 grid grid-cols-3 gap-3">
+              <div><div className="label-caps text-muted-foreground">MAPE</div><div className="data-mono mt-1 text-lg font-semibold">{window.meanAbsolutePercentageError === null ? '—' : `${window.meanAbsolutePercentageError.toFixed(1)}%`}</div></div>
+              <div><div className="label-caps text-muted-foreground">Median</div><div className="data-mono mt-1 text-lg font-semibold">{window.medianAbsolutePercentageError === null ? '—' : `${window.medianAbsolutePercentageError.toFixed(1)}%`}</div></div>
+              <div><div className="label-caps text-muted-foreground">In band</div><div className="data-mono mt-1 text-lg font-semibold">{window.bandCoveragePercent === null ? '—' : `${window.bandCoveragePercent.toFixed(0)}%`}</div></div>
+            </div>
+            <div className="mt-4 border-t border-border/70 pt-3 text-[11px] text-muted-foreground">{window.observationCount} matured forecast outcome{window.observationCount === 1 ? '' : 's'} in sample</div>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-start gap-2 border-t border-border/70 px-5 py-4 text-[11px] leading-5 text-muted-foreground"><Info size={14} className="mt-0.5 shrink-0 text-primary" /><span><span className="font-semibold text-foreground">Methodology.</span> {backtest.errorBandMethodology} {backtest.sampleWindow}</span></div>
     </section>
   );
 }
@@ -449,8 +486,10 @@ function Home() {
   const [sessionStartedAt] = useState(() => Date.now());
   const overviewQuery = useGetMarketOverview({ country }, { query: { queryKey: getGetMarketOverviewQueryKey({ country }), staleTime: 300_000, refetchInterval: 60_000 } });
   const forecastQuery = useGetMarketForecast({ country, horizon }, { query: { queryKey: getGetMarketForecastQueryKey({ country, horizon }), staleTime: 300_000, refetchInterval: 60_000 } });
+  const backtestQuery = useGetMarketBacktest({ country }, { query: { queryKey: getGetMarketBacktestQueryKey({ country }), staleTime: 300_000, refetchInterval: 60_000 } });
   const overview = overviewQuery.data ?? (overviewQuery.isLoading ? undefined : { ...FALLBACK_OVERVIEW, country, adjustment: { ...FALLBACK_OVERVIEW.adjustment, country } });
   const forecast = forecastQuery.data ?? { ...FALLBACK_FORECAST, country, horizon };
+  const backtest = backtestQuery.data ?? forecast.backtest;
   const scenarioCost = overview && scenario ? Math.round(overview.baseCostPerTon + (scenario.energy - 86.4) * 1.2 + (scenario.laborShare - 7) * overview.baseCostPerTon * 0.01 + (scenario.freight - 42) * 0.5 + (85 - scenario.freeAllocation) * 0.45) : undefined;
   const forecastForChart = useMemo<MarketForecast>(() => {
     if (!scenarioCost || !overview) return forecast;
@@ -480,6 +519,7 @@ function Home() {
           <div className="panel-header flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Planning horizon</div><h2 className="mt-1 font-display text-base font-semibold">Look ahead before you commit volume</h2></div><div data-testid="control-horizon" className="flex rounded-sm border border-border bg-secondary/55 p-1">{[4, 8, 12].map((item) => <button data-testid={`button-horizon-${item}`} key={item} onClick={() => setHorizon(item)} className={`rounded-sm px-3 py-1.5 font-mono text-[11px] ${horizon === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{item} weeks</button>)}</div></div>
            {forecastQuery.isError ? <div className="p-5"><EmptyOrError error onRetry={() => forecastQuery.refetch()} /></div> : overview ? <ForecastChart forecast={forecastForChart} inputs={overview.inputs} sessionStartedAt={sessionStartedAt} /> : <div className="p-5"><Skeleton className="h-64 w-full" /></div>}
         </div>
+        <BacktestEvidence backtest={backtest} />
          {overview && <><DecisionPanel overview={overview} /><ProsConsPanel /></>}
       </div>
     </>
