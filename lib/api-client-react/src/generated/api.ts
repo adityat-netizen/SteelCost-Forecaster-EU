@@ -19,11 +19,13 @@ import type {
   GetMarketBacktestParams,
   GetMarketForecastParams,
   GetMarketOverviewParams,
+  GetMarketValidationParams,
   HealthStatus,
   MarketAssumptions,
   MarketBacktest,
   MarketForecast,
-  MarketOverview
+  MarketOverview,
+  MarketValidation
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -289,6 +291,91 @@ export function useGetMarketForecast<TData = Awaited<ReturnType<typeof getMarket
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetMarketForecastQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetMarketValidationUrl = (params?: GetMarketValidationParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/market/validation?${stringifiedParams}` : `/api/market/validation`
+}
+
+/**
+ * Returns time-based held-out validation metrics for HRC, electricity, gas, and EUA models.
+ * @summary Get per-series model validation metrics
+ */
+export const getMarketValidation = async (params?: GetMarketValidationParams, options?: Parameters<typeof customFetch>[1]): Promise<MarketValidation> => {
+
+  return customFetch<MarketValidation>(getGetMarketValidationUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMarketValidationQueryKey = (params?: GetMarketValidationParams,) => {
+    return [
+    `/api/market/validation`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetMarketValidationQueryOptions = <TData = Awaited<ReturnType<typeof getMarketValidation>>, TError = ErrorType<unknown>>(params?: GetMarketValidationParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMarketValidation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMarketValidationQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMarketValidation>>> = ({ signal }) => getMarketValidation(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMarketValidation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMarketValidationQueryResult = NonNullable<Awaited<ReturnType<typeof getMarketValidation>>>
+export type GetMarketValidationQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get per-series model validation metrics
+ */
+
+export function useGetMarketValidation<TData = Awaited<ReturnType<typeof getMarketValidation>>, TError = ErrorType<unknown>>(
+ params?: GetMarketValidationParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMarketValidation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMarketValidationQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

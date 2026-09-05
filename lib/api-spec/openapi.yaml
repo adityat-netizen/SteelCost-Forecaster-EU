@@ -67,8 +67,8 @@ paths:
           schema:
             type: integer
             minimum: 1
-            maximum: 12
-            default: 12
+            maximum: 26
+            default: 26
       responses:
         "200":
           description: Forecast series
@@ -76,6 +76,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MarketForecast"
+  /market/validation:
+    get:
+      operationId: getMarketValidation
+      tags: [market]
+      summary: Get per-series model validation metrics
+      description: Returns time-based held-out validation metrics for HRC, electricity, gas, and EUA models.
+      parameters:
+        - name: country
+          in: query
+          required: false
+          schema:
+            type: string
+            default: Germany
+            enum: [Germany, France, Italy, Poland, Spain, Netherlands, Belgium]
+      responses:
+        "200":
+          description: Per-series validation metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketValidation"
   /market/backtest:
     get:
       operationId: getMarketBacktest
@@ -136,6 +157,11 @@ components:
           $ref: "#/components/schemas/Freshness"
         source:
           type: string
+        provenanceKind:
+          type: string
+          enum: [official, licensed_benchmark, proxy, assumption]
+        provenanceNote:
+          type: string
         updatedAt:
           type: string
         lastFetchedAt:
@@ -145,7 +171,7 @@ components:
           enum: [daily, weekly, monthly]
         nextExpectedUpdate:
           type: string
-      required: [key, label, value, unit, freshness, source, updatedAt, lastFetchedAt, sourceRefreshInterval, nextExpectedUpdate]
+      required: [key, label, value, unit, freshness, source, provenanceKind, provenanceNote, updatedAt, lastFetchedAt, sourceRefreshInterval, nextExpectedUpdate]
     CountryAdjustment:
       type: object
       properties:
@@ -207,11 +233,108 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ForecastPoint"
+        series:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeriesForecast"
+        validation:
+          $ref: "#/components/schemas/MarketValidation"
         backtest:
           $ref: "#/components/schemas/MarketBacktest"
         methodology:
           type: string
-      required: [country, horizon, points, backtest, methodology]
+      required: [country, horizon, points, series, validation, backtest, methodology]
+    SeriesHistoryPoint:
+      type: object
+      properties:
+        week:
+          type: number
+        label:
+          type: string
+        value:
+          type: number
+      required: [week, label, value]
+    SeriesForecastPoint:
+      type: object
+      properties:
+        week:
+          type: number
+        label:
+          type: string
+        value:
+          type: number
+        lower:
+          type: number
+        upper:
+          type: number
+      required: [week, label, value, lower, upper]
+    SeriesForecast:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        unit:
+          type: string
+        model:
+          type: string
+        sourceInputKey:
+          type: string
+        provenanceKind:
+          type: string
+          enum: [official, licensed_benchmark, proxy, assumption]
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeriesHistoryPoint"
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeriesForecastPoint"
+      required: [key, label, unit, model, sourceInputKey, provenanceKind, history, points]
+    ValidationRow:
+      type: object
+      properties:
+        series:
+          type: string
+        model:
+          type: string
+        baseline:
+          type: string
+        mae:
+          type: number
+        rmse:
+          type: number
+        mape:
+          type: number
+        baselineMape:
+          type: number
+        vsBaseline:
+          type: number
+        sampleSize:
+          type: number
+        validationWindow:
+          type: string
+      required: [series, model, baseline, mae, rmse, mape, baselineMape, vsBaseline, sampleSize, validationWindow]
+    MarketValidation:
+      type: object
+      properties:
+        generatedAt:
+          type: string
+        confidenceScore:
+          type: number
+        freshnessCoverage:
+          type: number
+        liveSeriesCount:
+          type: number
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationRow"
+        methodology:
+          type: string
+      required: [generatedAt, confidenceScore, freshnessCoverage, liveSeriesCount, rows, methodology]
     BacktestWindow:
       type: object
       properties:

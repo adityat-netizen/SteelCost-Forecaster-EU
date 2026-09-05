@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Freshness } from './freshness';
+import type { MarketInputProvenanceKind } from './marketInputProvenanceKind';
 import type { MarketInputSourceRefreshInterval } from './marketInputSourceRefreshInterval';
 
 export interface MarketInput {
@@ -15,6 +16,8 @@ export interface MarketInput {
   unit: string;
   freshness: Freshness;
   source: string;
+  provenanceKind: MarketInputProvenanceKind;
+  provenanceNote: string;
   updatedAt: string;
   lastFetchedAt: string;
   sourceRefreshInterval: MarketInputSourceRefreshInterval;

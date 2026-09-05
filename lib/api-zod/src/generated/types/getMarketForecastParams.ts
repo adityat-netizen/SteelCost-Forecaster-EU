@@ -11,7 +11,7 @@ export type GetMarketForecastParams = {
 country?: GetMarketForecastCountry;
 /**
  * @minimum 1
- * @maximum 12
+ * @maximum 26
  */
 horizon?: number;
 };

@@ -1,0 +1,63 @@
+You are evolving the existing SteelCost Forecaster app to match the attached PRD ("AI-Based Raw Material Price Forecasting & Cost Impact Analysis," v1.1). Keep the current UI shell (Forecaster page, Model & assumptions page, Market Snapshot / Scenario Controls / Cost Anatomy panels, Live/Cached/Estimated status tags). The gaps below are what's actually missing versus the PRD — fix these specifically.
+
+What already exists (keep and build on this)
+A single blended cost-per-tonne forecast with lower/upper range, exportable as CSV (current export: 8 weekly points, e.g. Germany, W1, 903, 881, 925)
+Per-input price cards (HRC, LME zinc, etc.) with freshness tags (Live / Cached / Estimated) and timestamps
+A country/region selector applying multiplier factors (electricity 1.08×, labour 1.12×, freight 0.98× for Germany)
+A "Cost Anatomy" panel breaking the total into named components with % share (e.g. HRC feedstock 74%)
+A "Signal confidence" score (currently a single number, e.g. 78/100)
+Gap 1 — Forecast is one blended cost number, not four separately forecasted price series
+
+The PRD requires HRC, electricity, natural gas, and EUA to each be forecasted independently with their own validated model, then combined in the cost layer — not a single pre-blended cost band.
+
+Add a per-series forecast view: one small chart (or tab) each for HRC, electricity, gas, EUA showing historical + 6-month forecast + confidence band
+The current blended "Planning baseline €897/t + range" becomes the output of combining these four, not a standalone forecast — refactor the cost model to visibly consume the four series forecasts as inputs, not a single internal number
+Keep the existing CSV export format, but add one export per price series (date, value, lower, upper, model_used) alongside the existing cost-per-tonne export
+Gap 2 — No baseline-vs-model validation shown anywhere
+
+The PRD requires every model to be benchmarked against a naive baseline using time-based backtesting (FR-04, FR-05), with MAE/RMSE/MAPE reported per series.
+
+Add a Model Validation section on the "Model & assumptions" page: a table with columns Series | Model | MAE | RMSE | MAPE | vs. Baseline
+Implement at minimum: naive/moving-average baseline + one statistical model (ARIMA or exponential smoothing) per series, backtested on a held-out historical period (not a random split)
+The "Signal confidence: 78" score on the dashboard should be derived from this table, not a separate number — show what feeds it (e.g., tooltip: "Based on 6-week backtest RMSE of €14/t, 91% data freshness, 4/4 series with live feeds")
+Gap 3 — Forecast horizon is 8 weeks; PRD priority is 6 months
+Extend the forecast horizon to 26 weeks (6 months) as the primary view, per PRD section 8.2. You can keep 1-month/3-month toggle views, but 6-month should be the default/priority, not the current 8-week cutoff
+Confidence bands should visibly widen with horizon length (the current CSV already does this correctly — W1 range ±22 vs W8 range ±64 — extend that same widening logic out to 26 weeks rather than resetting or flattening)
+Gap 4 — No Base/Stress/Severe scenario presets or sensitivity view
+
+Current "Scenario Controls" only has a country selector. The PRD requires (FR-08):
+
+Add three preset scenario buttons: Base / Stress / Severe, each applying a defined % shift to the four underlying price series (not to the blended cost directly) — e.g. Stress: HRC +10%, electricity +15%, gas +15%, EUA +20%; Severe: roughly double those shifts. Make the actual percentages visible/editable, not hidden
+Keep the country selector as an independent, separate control from the scenario preset (region factors and market-stress scenarios are two different things and should compose, not conflict)
+Add a sensitivity/tornado chart on the Cost Anatomy panel: for a fixed % move (e.g. +10%) in each of the four drivers independently, show the resulting € swing in cost-per-tonne, ranked — this directly answers "which cost drivers create the greatest sensitivity" from the PRD's business questions
+Gap 5 — Plant operating parameters aren't exposed/editable
+
+Cost Anatomy shows the output breakdown (HRC feedstock 74%, etc.) but the PRD requires the underlying plant parameters to be visible and independently editable (section 6.2, FR-07):
+
+Add an editable parameters panel (can live on "Model & assumptions"): production volume, yield/material efficiency, electricity consumption per tonne, gas consumption per tonne, CO₂ emissions factor, free EU ETS allowance % (with a note that this phases down 2026-2034 under CBAM)
+Confirm in the UI that changing these parameters recomputes cost immediately without re-running any forecast model — this is the PRD's explicit requirement that the cost layer and forecast layer stay decoupled
+Where a parameter isn't yet confirmed by the business, label it "Assumed — pending confirmation" rather than presenting it as a firm number
+Gap 6 — No explainability/feature importance view
+
+FR-09 requires visible drivers behind any ML-based forecast.
+
+If/when an ML model (e.g., XGBoost) is used for any of the four series, add a small feature-importance chart on the Model & assumptions page for that series
+For purely statistical models (ARIMA/ETS), this isn't applicable — just note in the UI which series use which model type
+Gap 7 — Data provenance needs one more field
+
+Current price cards show source + freshness tag + timestamp — good. Add:
+
+Whether the source is an official benchmark or a free proxy (this matters most for HRC and EUA per the PRD's flagged licensing risk) — e.g. "Kallanish/MEPS proxy — confirm licensed benchmark before production use"
+What NOT to change
+Don't rebuild the visual design — the dark "Planning baseline" hero card, Signal confidence ring, and Cost Anatomy bar are good UI patterns; keep them, just make sure the numbers they display are now backed by the validation/scenario logic above
+Don't add zinc, freight, or FX into the forecasting layer — those stay as fixed/adjustable cost-model assumptions only, per PRD scope
+Build order for this session
+Refactor cost model to explicitly consume 4 separate series forecasts (even if simple/naive at first) instead of one internal blended number
+Add the naive baseline + one statistical model per series, with time-based backtest and the MAE/RMSE/MAPE table
+Wire "Signal confidence" to be derived from that table
+Extend forecast horizon to 26 weeks with widening bands
+Add Base/Stress/Severe scenario presets (separate from country selector) applied to the 4 series
+Add the sensitivity/tornado chart
+Add the editable plant-parameters panel with "assumed/confirmed" labeling
+Add feature-importance view for any ML-based series
+Add benchmark-vs-proxy labeling to price source cards

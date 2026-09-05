@@ -7,11 +7,15 @@
  */
 import type { ForecastPoint } from './forecastPoint';
 import type { MarketBacktest } from './marketBacktest';
+import type { MarketValidation } from './marketValidation';
+import type { SeriesForecast } from './seriesForecast';
 
 export interface MarketForecast {
   country: string;
   horizon: number;
   points: ForecastPoint[];
+  series: SeriesForecast[];
+  validation: MarketValidation;
   backtest: MarketBacktest;
   methodology: string;
 }

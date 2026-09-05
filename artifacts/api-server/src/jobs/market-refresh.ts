@@ -162,7 +162,7 @@ async function storeRefresh(now: Date) {
 
     for (const country of COUNTRIES) {
       const base = getBaseCost(inputs, country);
-      const points = createForecastPoints(base, 12);
+      const points = createForecastPoints(base, 26, inputs, country);
       for (const point of points.filter((forecastPoint) => forecastPoint.week > 0)) {
         const targetDate = new Date(runAt);
         targetDate.setUTCDate(targetDate.getUTCDate() + point.week * 7);

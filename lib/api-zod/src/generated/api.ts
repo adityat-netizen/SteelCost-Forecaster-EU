@@ -37,6 +37,8 @@ export const GetMarketOverviewResponse = zod.object({
   "unit": zod.string(),
   "freshness": zod.enum(['live', 'cached', 'estimated']),
   "source": zod.string(),
+  "provenanceKind": zod.enum(['official', 'licensed_benchmark', 'proxy', 'assumption']),
+  "provenanceNote": zod.string(),
   "updatedAt": zod.string(),
   "lastFetchedAt": zod.string(),
   "sourceRefreshInterval": zod.enum(['daily', 'weekly', 'monthly']),
@@ -61,8 +63,9 @@ export const GetMarketOverviewResponse = zod.object({
  * @summary Get a directional production cost forecast
  */
 export const getMarketForecastQueryCountryDefault = `Germany`;
-export const getMarketForecastQueryHorizonDefault = 12;
-export const getMarketForecastQueryHorizonMax = 12;
+export const getMarketForecastQueryHorizonDefault = 26;
+export const getMarketForecastQueryHorizonMax = 26;
+
 
 
 export const GetMarketForecastQueryParams = zod.object({
@@ -80,6 +83,45 @@ export const GetMarketForecastResponse = zod.object({
   "lower": zod.number(),
   "upper": zod.number()
 })),
+  "series": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "unit": zod.string(),
+  "model": zod.string(),
+  "sourceInputKey": zod.string(),
+  "provenanceKind": zod.enum(['official', 'licensed_benchmark', 'proxy', 'assumption']),
+  "history": zod.array(zod.object({
+  "week": zod.number(),
+  "label": zod.string(),
+  "value": zod.number()
+})),
+  "points": zod.array(zod.object({
+  "week": zod.number(),
+  "label": zod.string(),
+  "value": zod.number(),
+  "lower": zod.number(),
+  "upper": zod.number()
+}))
+})),
+  "validation": zod.object({
+  "generatedAt": zod.string(),
+  "confidenceScore": zod.number(),
+  "freshnessCoverage": zod.number(),
+  "liveSeriesCount": zod.number(),
+  "rows": zod.array(zod.object({
+  "series": zod.string(),
+  "model": zod.string(),
+  "baseline": zod.string(),
+  "mae": zod.number(),
+  "rmse": zod.number(),
+  "mape": zod.number(),
+  "baselineMape": zod.number(),
+  "vsBaseline": zod.number(),
+  "sampleSize": zod.number(),
+  "validationWindow": zod.string()
+})),
+  "methodology": zod.string()
+}),
   "backtest": zod.object({
   "generatedAt": zod.string(),
   "sampleWindow": zod.string(),
@@ -109,25 +151,43 @@ export const GetMarketForecastResponse = zod.object({
   "methodology": zod.string()
 })
 
+
+/**
+ * Returns time-based held-out validation metrics for HRC, electricity, gas, and EUA models.
+ * @summary Get per-series model validation metrics
+ */
+export const getMarketValidationQueryCountryDefault = `Germany`;
+
+export const GetMarketValidationQueryParams = zod.object({
+  "country": zod.enum(['Germany', 'France', 'Italy', 'Poland', 'Spain', 'Netherlands', 'Belgium']).default(getMarketValidationQueryCountryDefault)
+})
+
+export const GetMarketValidationResponse = zod.object({
+  "generatedAt": zod.string(),
+  "confidenceScore": zod.number(),
+  "freshnessCoverage": zod.number(),
+  "liveSeriesCount": zod.number(),
+  "rows": zod.array(zod.object({
+  "series": zod.string(),
+  "model": zod.string(),
+  "baseline": zod.string(),
+  "mae": zod.number(),
+  "rmse": zod.number(),
+  "mape": zod.number(),
+  "baselineMape": zod.number(),
+  "vsBaseline": zod.number(),
+  "sampleSize": zod.number(),
+  "validationWindow": zod.string()
+})),
+  "methodology": zod.string()
+})
+
+
 /**
  * Returns error metrics calculated only from matured forecast snapshots and complete historical source observations.
  * @summary Get rolling forecast backtest metrics
  */
 export const getMarketBacktestQueryCountryDefault = `Germany`;
-/**
- * @summary Get model assumptions and source notes
- */
-export const GetMarketAssumptionsResponse = zod.object({
-  "title": zod.string(),
-  "items": zod.array(zod.object({
-  "label": zod.string(),
-  "detail": zod.string(),
-  "status": zod.enum(['live', 'cached', 'estimated']),
-  "refresh": zod.string()
-})),
-  "disclaimer": zod.string()
-})
-
 
 export const GetMarketBacktestQueryParams = zod.object({
   "country": zod.enum(['Germany', 'France', 'Italy', 'Poland', 'Spain', 'Netherlands', 'Belgium']).default(getMarketBacktestQueryCountryDefault)
@@ -159,3 +219,20 @@ export const GetMarketBacktestResponse = zod.object({
 }),
   "errorBandMethodology": zod.string()
 })
+
+
+/**
+ * @summary Get model assumptions and source notes
+ */
+export const GetMarketAssumptionsResponse = zod.object({
+  "title": zod.string(),
+  "items": zod.array(zod.object({
+  "label": zod.string(),
+  "detail": zod.string(),
+  "status": zod.enum(['live', 'cached', 'estimated']),
+  "refresh": zod.string()
+})),
+  "disclaimer": zod.string()
+})
+
+
