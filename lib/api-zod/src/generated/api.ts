@@ -223,6 +223,42 @@ export const GetMarketBacktestResponse = zod.object({
 
 
 /**
+ * Returns persisted per-series forecasts and matured actual observations.
+ * @summary Get forecast track record
+ */
+export const getMarketTrackRecordQueryCountryDefault = `Germany`;
+
+export const GetMarketTrackRecordQueryParams = zod.object({
+  "country": zod.enum(['Germany', 'France', 'Italy', 'Poland', 'Spain', 'Netherlands', 'Belgium']).default(getMarketTrackRecordQueryCountryDefault),
+  "series": zod.coerce.string().optional()
+})
+
+export const GetMarketTrackRecordResponse = zod.object({
+  "generatedAt": zod.string(),
+  "country": zod.string(),
+  "rows": zod.array(zod.object({
+  "seriesKey": zod.string(),
+  "series": zod.string(),
+  "unit": zod.string(),
+  "forecastDate": zod.string(),
+  "targetDate": zod.string(),
+  "predictedValue": zod.number(),
+  "lowerBound": zod.number(),
+  "upperBound": zod.number(),
+  "actualValue": zod.number().nullable(),
+  "model": zod.string(),
+  "status": zod.enum(['pending', 'complete']),
+  "absoluteError": zod.number().nullable(),
+  "percentageError": zod.number().nullable()
+})),
+  "totalForecasts": zod.number(),
+  "maturedForecasts": zod.number(),
+  "seriesCount": zod.number(),
+  "note": zod.string()
+})
+
+
+/**
  * @summary Get model assumptions and source notes
  */
 export const GetMarketAssumptionsResponse = zod.object({
@@ -233,7 +269,19 @@ export const GetMarketAssumptionsResponse = zod.object({
   "status": zod.enum(['live', 'cached', 'estimated']),
   "refresh": zod.string()
 })),
-  "disclaimer": zod.string()
+  "disclaimer": zod.string(),
+  "sourceRegistry": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "sourceName": zod.string(),
+  "feedType": zod.enum(['licensed', 'proxy', 'estimated']),
+  "apiEndpointOrReference": zod.string(),
+  "confirmedBy": zod.string().nullable(),
+  "confirmedDate": zod.string().nullable(),
+  "currentStatus": zod.enum(['live', 'cached', 'estimated']),
+  "upgradeRequirement": zod.string()
+})),
+  "migrationChecklist": zod.array(zod.string())
 })
 
 

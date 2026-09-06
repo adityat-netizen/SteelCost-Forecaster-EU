@@ -4,6 +4,19 @@ import type { Country, MarketLogger } from "../routes/market";
 
 export type FeedCadence = "daily" | "weekly" | "monthly";
 export type FeedFreshness = "live" | "cached" | "estimated";
+export type RegistryFeedType = "licensed" | "proxy" | "estimated";
+
+export type MarketSourceRegistryItem = {
+  key: string;
+  label: string;
+  sourceName: string;
+  feedType: RegistryFeedType;
+  apiEndpointOrReference: string;
+  confirmedBy: string | null;
+  confirmedDate: string | null;
+  currentStatus: FeedFreshness;
+  upgradeRequirement: string;
+};
 
 export type ResolvedFeed = {
   value: number;
@@ -30,6 +43,25 @@ type RemoteValue = {
   timestamp: string;
   provider: string;
 };
+
+export const MARKET_SOURCE_REGISTRY: Omit<MarketSourceRegistryItem, "currentStatus">[] = [
+  { key: "hrc", label: "Hot-Rolled Coil (HRC)", sourceName: "Kallanish / MEPS benchmark reference", feedType: "proxy", apiEndpointOrReference: "MARKET_HRC_FEED_URL", confirmedBy: null, confirmedDate: null, upgradeRequirement: "Confirm a licensed North Europe HRC benchmark subscription and populate the managed feed URL/key." },
+  { key: "electricity", label: "Industrial electricity", sourceName: "ENTSO-E Transparency Platform", feedType: "estimated", apiEndpointOrReference: "ENTSOE_API_TOKEN + bidding-zone endpoint", confirmedBy: null, confirmedDate: null, upgradeRequirement: "Confirm the production bidding zone and maintain a verified ENTSO-E access token." },
+  { key: "ttf", label: "Title Transfer Facility (TTF) natural gas", sourceName: "ICE Endex TTF benchmark reference", feedType: "estimated", apiEndpointOrReference: "MARKET_TTF_FEED_URL", confirmedBy: null, confirmedDate: null, upgradeRequirement: "Add a licensed ICE Endex TTF subscription and verify the response schema." },
+  { key: "carbon", label: "EU Allowance (EUA)", sourceName: "ICE Endex EU Emissions Trading System benchmark reference", feedType: "estimated", apiEndpointOrReference: "MARKET_EUA_FEED_URL", confirmedBy: null, confirmedDate: null, upgradeRequirement: "Add a licensed EU Emissions Trading System allowance feed and validate settlement timestamps." },
+  { key: "zinc", label: "London Metal Exchange (LME) zinc", sourceName: "London Metal Exchange delayed-price reference", feedType: "proxy", apiEndpointOrReference: "MARKET_LME_ZINC_FEED_URL", confirmedBy: null, confirmedDate: null, upgradeRequirement: "Confirm a licensed LME price subscription for coating input." },
+  { key: "eurUsd", label: "Foreign Exchange (FX) · EUR / USD", sourceName: "Frankfurter public reference", feedType: "proxy", apiEndpointOrReference: "https://api.frankfurter.app/latest?from=EUR&to=USD", confirmedBy: null, confirmedDate: null, upgradeRequirement: "Confirm whether treasury requires a licensed FX close or internal hedge curve." },
+  { key: "labor", label: "Manufacturing labour", sourceName: "Eurostat lc_lci_lev", feedType: "licensed", apiEndpointOrReference: "Eurostat public statistical API", confirmedBy: "Eurostat public dataset", confirmedDate: "2026-09-05", upgradeRequirement: "No upgrade currently required; confirm plant-specific labor mix before approval." },
+  { key: "freight", label: "EU corridor freight", sourceName: "Maintained corridor reference", feedType: "estimated", apiEndpointOrReference: "MARKET_FREIGHT_FEED_URL", confirmedBy: null, confirmedDate: null, upgradeRequirement: "Add a corridor-specific rail/truck or port handling subscription." },
+  { key: "brent", label: "Brent crude", sourceName: "Maintained Brent reference", feedType: "proxy", apiEndpointOrReference: "MARKET_BRENT_FEED_URL", confirmedBy: null, confirmedDate: null, upgradeRequirement: "Confirm a licensed Brent settlement feed if fuel exposure is hedged." },
+];
+
+export function getMarketSourceRegistry(inputs: Array<{ key: string; freshness: FeedFreshness }>) {
+  return MARKET_SOURCE_REGISTRY.map((entry) => ({
+    ...entry,
+    currentStatus: inputs.find((input) => input.key === entry.key)?.freshness ?? "estimated",
+  }));
+}
 
 const feedSpecs: Record<string, FeedSpec> = {
   hrc: {

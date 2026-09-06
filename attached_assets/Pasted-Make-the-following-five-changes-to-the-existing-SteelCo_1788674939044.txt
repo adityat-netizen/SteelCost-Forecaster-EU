@@ -1,0 +1,54 @@
+Make the following five changes to the existing SteelCost Forecaster app. Keep all current UI layout, styling, and components — these are refinements, not a redesign.
+
+1. Write full names alongside every acronym
+
+Find every acronym currently shown bare in the UI and add its full name on first/primary use (a subscript, tooltip, or "(...)" expansion — pick whichever fits the existing design system best, but be consistent across the app):
+
+HRC → "Hot-Rolled Coil (HRC)"
+EUA → "EU Allowance (EUA)" — the EU ETS carbon permit unit
+EU ETS → "EU Emissions Trading System (EU ETS)"
+CBAM → "Carbon Border Adjustment Mechanism (CBAM)"
+ETS (as in the model name "Exponential smoothing (ETS)") → keep as is but make sure it's never confused visually with "EU ETS" above — consider relabeling the model itself as "Exponential Smoothing" without the acronym, or clarifying in a tooltip, since this app already uses ETS to mean two different things
+ARIMA / SARIMA → "Autoregressive Integrated Moving Average (ARIMA)" / "Seasonal ARIMA (SARIMA)"
+MAE / RMSE / MAPE → "Mean Absolute Error (MAE)" / "Root Mean Squared Error (RMSE)" / "Mean Absolute Percentage Error (MAPE)"
+LME → "London Metal Exchange (LME)"
+FX → "Foreign Exchange (FX)"
+TTF → "Title Transfer Facility (TTF)" — the European natural gas benchmark
+ENTSO-E → "European Network of Transmission System Operators for Electricity (ENTSO-E)"
+Scan the rest of the app for any other acronym you find (in tooltips, CSV headers, the assumptions page) and apply the same treatment — don't limit this to only the list above
+2. Explicitly label the primary output as "Production Cost"
+
+The current hero card says "Planning baseline / €894 / metric tonne." This is ambiguous — a reader could think it's a market price, not a modeled internal cost.
+
+Relabel the primary metric clearly as "Estimated Production Cost" (or "Forecasted Production Cost per Tonne" if space allows), not just "Planning baseline"
+Keep "Planning baseline" as a secondary descriptor underneath if you want to preserve that language, but the number itself must be unambiguously identified as a cost estimate, not a market price or a forecast of what steel sells for
+Apply the same clarity to any other place this number appears (PDF export title, CSV headers, dashboard chart titles) — e.g. CSV export header should read Production Cost (EUR/t) rather than a generic "Expected cost" column name
+3. Add a total euro-impact calculator
+
+Add a new panel/widget (can sit near Cost Anatomy or Scenario Controls) that converts the per-tonne cost forecast into a total financial impact for the user's actual operation:
+
+Input: monthly or annual production volume (metric tonnes) — editable field, tied to the same plant-parameters input if that already exists elsewhere in the app; don't create a duplicate/conflicting volume field
+Output: Total Euro Impact = (forecasted production cost per tonne) × (production volume), shown for:
+Current period (based on today's estimate)
+Each scenario (Base / Stress / Severe, once those exist) — show the € swing between scenarios, not just each scenario's total in isolation, so the user immediately sees "Stress scenario costs you an extra €X over Y months"
+Optionally, cumulative impact across the full 6-month forecast horizon (sum of weekly cost × weekly volume assumption), clearly labeled as a projection, not a guarantee
+Format all outputs in full € with thousands separators (e.g., €1,284,600), not just per-tonne figures, since the whole point of this panel is to make the cost concrete at operational scale
+4. Collect real forecast history (start building a track record)
+
+Right now every forecast is generated fresh with no stored history of past forecasts vs. what actually happened. Add a persistence layer:
+
+Every time a forecast is generated (or on each scheduled refresh), store the forecast snapshot — series, forecast date, target date, predicted value, lower/upper bound, model used — in a database table (don't just overwrite the previous forecast)
+Once real outcomes become available (i.e., a forecasted date has now passed and you have the actual observed price for that date), store the actual value alongside the historical forecast for that same date
+Build a simple "Forecast Track Record" view (can go on the Model & assumptions page) showing forecast vs. actual for past periods, once enough history accumulates — this is what will eventually let you compute real MAE/RMSE from live performance, not just backtested historical data
+This won't show meaningful results on day one — that's expected. The point of this change is to start the data collection now so the track record exists a few weeks/months from now. Add a note in the UI like "Track record builds over time — check back as forecasts mature" until there's enough data to show a real comparison
+5. Progressively replace estimated fallback data with verified licensed feeds
+
+Several price sources currently show as "Estimated" (a fallback/proxy) rather than a confirmed, licensed data feed. Set this up to be replaced incrementally, not all-or-nothing:
+
+Add a data source registry/config (a single file or table) listing each of the four core series (HRC, electricity, natural gas, EUA) plus any secondary inputs (LME zinc, FX), with fields: source_name, feed_type (licensed/proxy/estimated), api_endpoint_or_reference, confirmed_by, confirmed_date
+The UI's existing status tags (Live / Cached / Estimated) should read directly from this registry rather than being hardcoded per price card — so swapping a source from "Estimated" to "Licensed" in the registry automatically updates the tag and tooltip everywhere it's shown, with no other code changes needed
+Add a short migration checklist visible on the Model & assumptions page: list each series, its current feed type, and what's needed to upgrade it (e.g., "HRC — currently Kallanish/MEPS proxy — requires licensed subscription to upgrade to 'Licensed benchmark' status")
+Do not silently upgrade a tag without an actual verified source behind it — the registry should require the confirmed_by and confirmed_date fields to be filled before a tag can show anything other than "Estimated" or "Proxy"
+What not to change
+Keep the existing visual design system, layout, and component structure
+Don't remove any currently working feature (Live/Cached/Estimated tags, Series CSV export, Signal Confidence panel, Scenario Controls) — these five changes layer on top

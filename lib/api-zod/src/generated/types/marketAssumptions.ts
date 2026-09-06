@@ -6,9 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AssumptionItem } from './assumptionItem';
+import type { SourceRegistryItem } from './sourceRegistryItem';
 
 export interface MarketAssumptions {
   title: string;
   items: AssumptionItem[];
   disclaimer: string;
+  sourceRegistry: SourceRegistryItem[];
+  migrationChecklist: string[];
 }

@@ -118,6 +118,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MarketBacktest"
+  /market/track-record:
+    get:
+      operationId: getMarketTrackRecord
+      tags: [market]
+      summary: Get forecast track record
+      description: Returns persisted per-series forecasts and matured actual observations.
+      parameters:
+        - name: country
+          in: query
+          required: false
+          schema:
+            type: string
+            default: Germany
+            enum: [Germany, France, Italy, Poland, Spain, Netherlands, Belgium]
+        - name: series
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Forecast track record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketTrackRecord"
   /market/assumptions:
     get:
       operationId: getMarketAssumptions
@@ -397,4 +423,86 @@ components:
             $ref: "#/components/schemas/AssumptionItem"
         disclaimer:
           type: string
-      required: [title, items, disclaimer]
+        sourceRegistry:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceRegistryItem"
+        migrationChecklist:
+          type: array
+          items:
+            type: string
+      required: [title, items, disclaimer, sourceRegistry, migrationChecklist]
+    SourceRegistryItem:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        sourceName:
+          type: string
+        feedType:
+          type: string
+          enum: [licensed, proxy, estimated]
+        apiEndpointOrReference:
+          type: string
+        confirmedBy:
+          type: ["string", "null"]
+        confirmedDate:
+          type: ["string", "null"]
+        currentStatus:
+          $ref: "#/components/schemas/Freshness"
+        upgradeRequirement:
+          type: string
+      required: [key, label, sourceName, feedType, apiEndpointOrReference, confirmedBy, confirmedDate, currentStatus, upgradeRequirement]
+    TrackRecordRow:
+      type: object
+      properties:
+        seriesKey:
+          type: string
+        series:
+          type: string
+        unit:
+          type: string
+        forecastDate:
+          type: string
+        targetDate:
+          type: string
+        predictedValue:
+          type: number
+        lowerBound:
+          type: number
+        upperBound:
+          type: number
+        actualValue:
+          type: ["number", "null"]
+        model:
+          type: string
+        status:
+          type: string
+          enum: [pending, complete]
+        absoluteError:
+          type: ["number", "null"]
+        percentageError:
+          type: ["number", "null"]
+      required: [seriesKey, series, unit, forecastDate, targetDate, predictedValue, lowerBound, upperBound, actualValue, model, status, absoluteError, percentageError]
+    MarketTrackRecord:
+      type: object
+      properties:
+        generatedAt:
+          type: string
+        country:
+          type: string
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackRecordRow"
+        totalForecasts:
+          type: number
+        maturedForecasts:
+          type: number
+        seriesCount:
+          type: number
+        note:
+          type: string
+      required: [generatedAt, country, rows, totalForecasts, maturedForecasts, seriesCount, note]

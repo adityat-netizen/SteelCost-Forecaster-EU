@@ -19,12 +19,14 @@ import type {
   GetMarketBacktestParams,
   GetMarketForecastParams,
   GetMarketOverviewParams,
+  GetMarketTrackRecordParams,
   GetMarketValidationParams,
   HealthStatus,
   MarketAssumptions,
   MarketBacktest,
   MarketForecast,
   MarketOverview,
+  MarketTrackRecord,
   MarketValidation
 } from './api.schemas';
 
@@ -461,6 +463,91 @@ export function useGetMarketBacktest<TData = Awaited<ReturnType<typeof getMarket
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetMarketBacktestQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetMarketTrackRecordUrl = (params?: GetMarketTrackRecordParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/market/track-record?${stringifiedParams}` : `/api/market/track-record`
+}
+
+/**
+ * Returns persisted per-series forecasts and matured actual observations.
+ * @summary Get forecast track record
+ */
+export const getMarketTrackRecord = async (params?: GetMarketTrackRecordParams, options?: Parameters<typeof customFetch>[1]): Promise<MarketTrackRecord> => {
+
+  return customFetch<MarketTrackRecord>(getGetMarketTrackRecordUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMarketTrackRecordQueryKey = (params?: GetMarketTrackRecordParams,) => {
+    return [
+    `/api/market/track-record`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetMarketTrackRecordQueryOptions = <TData = Awaited<ReturnType<typeof getMarketTrackRecord>>, TError = ErrorType<unknown>>(params?: GetMarketTrackRecordParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMarketTrackRecord>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMarketTrackRecordQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMarketTrackRecord>>> = ({ signal }) => getMarketTrackRecord(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMarketTrackRecord>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMarketTrackRecordQueryResult = NonNullable<Awaited<ReturnType<typeof getMarketTrackRecord>>>
+export type GetMarketTrackRecordQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get forecast track record
+ */
+
+export function useGetMarketTrackRecord<TData = Awaited<ReturnType<typeof getMarketTrackRecord>>, TError = ErrorType<unknown>>(
+ params?: GetMarketTrackRecordParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMarketTrackRecord>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMarketTrackRecordQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

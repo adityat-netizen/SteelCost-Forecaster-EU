@@ -185,10 +185,72 @@ export interface AssumptionItem {
   refresh: string;
 }
 
+export type SourceRegistryItemFeedType = typeof SourceRegistryItemFeedType[keyof typeof SourceRegistryItemFeedType];
+
+
+export const SourceRegistryItemFeedType = {
+  licensed: 'licensed',
+  proxy: 'proxy',
+  estimated: 'estimated',
+} as const;
+
+export interface SourceRegistryItem {
+  key: string;
+  label: string;
+  sourceName: string;
+  feedType: SourceRegistryItemFeedType;
+  apiEndpointOrReference: string;
+  /** @nullable */
+  confirmedBy: string | null;
+  /** @nullable */
+  confirmedDate: string | null;
+  currentStatus: Freshness;
+  upgradeRequirement: string;
+}
+
 export interface MarketAssumptions {
   title: string;
   items: AssumptionItem[];
   disclaimer: string;
+  sourceRegistry: SourceRegistryItem[];
+  migrationChecklist: string[];
+}
+
+export type TrackRecordRowStatus = typeof TrackRecordRowStatus[keyof typeof TrackRecordRowStatus];
+
+
+export const TrackRecordRowStatus = {
+  pending: 'pending',
+  complete: 'complete',
+} as const;
+
+export interface TrackRecordRow {
+  seriesKey: string;
+  series: string;
+  unit: string;
+  forecastDate: string;
+  targetDate: string;
+  predictedValue: number;
+  lowerBound: number;
+  upperBound: number;
+  /** @nullable */
+  actualValue: number | null;
+  model: string;
+  status: TrackRecordRowStatus;
+  /** @nullable */
+  absoluteError: number | null;
+  /** @nullable */
+  percentageError: number | null;
+}
+
+export interface MarketTrackRecord {
+  generatedAt: string;
+  country: string;
+  rows: TrackRecordRow[];
+  totalForecasts: number;
+  maturedForecasts: number;
+  seriesCount: number;
+  note: string;
 }
 
 export type GetMarketOverviewParams = {
@@ -255,6 +317,24 @@ export type GetMarketBacktestCountry = typeof GetMarketBacktestCountry[keyof typ
 
 
 export const GetMarketBacktestCountry = {
+  Germany: 'Germany',
+  France: 'France',
+  Italy: 'Italy',
+  Poland: 'Poland',
+  Spain: 'Spain',
+  Netherlands: 'Netherlands',
+  Belgium: 'Belgium',
+} as const;
+
+export type GetMarketTrackRecordParams = {
+country?: GetMarketTrackRecordCountry;
+series?: string;
+};
+
+export type GetMarketTrackRecordCountry = typeof GetMarketTrackRecordCountry[keyof typeof GetMarketTrackRecordCountry];
+
+
+export const GetMarketTrackRecordCountry = {
   Germany: 'Germany',
   France: 'France',
   Italy: 'Italy',
