@@ -1,5 +1,5 @@
 {
-  "buildCommand": "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/steelcost-forecaster build && rm -rf public && cp -R dist/public public",
+  "buildCommand": "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/steelcost-forecaster build",
   "outputDirectory": "public",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": "vite"
