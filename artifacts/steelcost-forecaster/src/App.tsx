@@ -22,6 +22,7 @@ import {
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
+  X,
   Zap,
 } from 'lucide-react';
 import {
@@ -306,8 +307,13 @@ function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="steel-noise flex min-h-[100dvh] bg-background text-foreground">
-      <aside className={`fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col bg-sidebar text-sidebar-foreground shadow-2xl transition-transform duration-200 md:static md:translate-x-0 md:shadow-none ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex h-[76px] items-center border-b border-sidebar-border px-6"><BrandMark /></div>
+      <aside className={`fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-sidebar text-sidebar-foreground shadow-2xl transition-transform duration-200 lg:static lg:translate-x-0 lg:shadow-none ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="flex h-[76px] items-center justify-between border-b border-sidebar-border px-6">
+          <BrandMark />
+          <button data-testid="button-close-sidebar" aria-label="Close navigation" onClick={() => setMobileOpen(false)} className="rounded-sm p-1.5 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden">
+            <X size={18} />
+          </button>
+        </div>
         <div className="flex-1 px-3 py-7">
           <div className="label-caps px-3 text-sidebar-foreground/40">Workspace</div>
           <nav className="mt-3 space-y-1">
@@ -336,21 +342,32 @@ function Shell({ children }: { children: ReactNode }) {
           <div className="mt-2 font-mono text-[10px] text-sidebar-foreground/30">BUILD 1.4.7 · EU-27</div>
         </div>
       </aside>
-      {mobileOpen && <button data-testid="button-close-sidebar-overlay" aria-label="Close navigation" onClick={() => setMobileOpen(false)} className="fixed inset-0 z-30 bg-sidebar/45 md:hidden" />}
+      {mobileOpen && (
+        <button
+          data-testid="button-close-sidebar-overlay"
+          aria-label="Close navigation"
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden cursor-default"
+        />
+      )}
       <div className="min-w-0 flex-1">
-        <header className="sticky top-0 z-20 flex h-[76px] items-center justify-between border-b border-border/80 bg-background/95 px-5 backdrop-blur md:px-9">
+        <header className="sticky top-0 z-20 flex h-[76px] items-center justify-between border-b border-border/80 bg-background/95 px-4 sm:px-6 md:px-9 backdrop-blur">
           <div className="flex items-center gap-3">
-            <button data-testid="button-open-sidebar" aria-label="Open navigation" onClick={() => setMobileOpen(true)} className="rounded-sm p-2 text-muted-foreground hover:bg-secondary md:hidden"><Menu size={20} /></button>
-            <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
-              <span className="font-mono text-[10px] uppercase tracking-[.12em]">Operations</span><span>/</span><span className="text-foreground">{location === '/assumptions' ? 'Model & assumptions' : 'Cost forecaster'}</span>
+            <button data-testid="button-open-sidebar" aria-label="Open navigation" onClick={() => setMobileOpen(true)} className="rounded-sm p-2 text-muted-foreground hover:bg-secondary lg:hidden">
+              <Menu size={20} />
+            </button>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="hidden font-mono text-[10px] uppercase tracking-[.12em] sm:inline">Operations</span>
+              <span className="hidden sm:inline">/</span>
+              <span className="font-medium text-foreground truncate max-w-[150px] sm:max-w-none">{location === '/assumptions' ? 'Model & assumptions' : 'Cost forecaster'}</span>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden rounded-sm border border-border px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground sm:inline-flex">EUR / metric tonne</span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card font-display text-xs font-bold text-foreground">EU</div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span className="hidden rounded-sm border border-border px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground md:inline-flex">EUR / metric tonne</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card font-display text-xs font-bold text-foreground shrink-0">EU</div>
           </div>
         </header>
-        <main className="mx-auto max-w-[1520px] px-5 py-7 md:px-9 md:py-10">{children}</main>
+        <main className="mx-auto max-w-[1520px] px-4 py-6 sm:px-6 md:px-9 md:py-10">{children}</main>
       </div>
     </div>
   );
@@ -364,17 +381,17 @@ function PageIntro({ onExportCsv, onExportSeries, onExportPdf, onRefresh, refres
         <h1 className="font-display text-[clamp(2rem,4vw,3.35rem)] font-bold leading-[.98] tracking-[-.055em] text-foreground">Steel cost<br className="hidden sm:block" /> forecaster<span className="text-primary">.</span></h1>
         <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">A clear view of what your next tonne could cost — grounded in current EU market signals and transparent assumptions.</p>
       </div>
-      <div className="print-hide flex flex-wrap gap-2 self-start md:self-end">
-        <button data-testid="button-refresh-cost" onClick={onRefresh} disabled={refreshing} aria-label="Refresh cost" className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-card px-4 text-xs font-bold text-foreground shadow-sm hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary disabled:cursor-wait disabled:opacity-60">
+      <div className="print-hide grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end md:self-end">
+        <button data-testid="button-refresh-cost" onClick={onRefresh} disabled={refreshing} aria-label="Refresh cost" className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-card px-3 sm:px-4 text-xs font-bold text-foreground shadow-sm hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary disabled:cursor-wait disabled:opacity-60 whitespace-nowrap">
           <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} /> {refreshing ? 'Refreshing' : 'Refresh cost'}
         </button>
-        <button data-testid="button-export-pdf" onClick={onExportPdf} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-card px-4 text-xs font-bold text-foreground shadow-sm hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary">
+        <button data-testid="button-export-pdf" onClick={onExportPdf} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-card px-3 sm:px-4 text-xs font-bold text-foreground shadow-sm hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary whitespace-nowrap">
           <Printer size={15} /> Save PDF
         </button>
-        <button data-testid="button-export-series" onClick={onExportSeries} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-card px-4 text-xs font-bold text-foreground shadow-sm hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary">
+        <button data-testid="button-export-series" onClick={onExportSeries} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-card px-3 sm:px-4 text-xs font-bold text-foreground shadow-sm hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary whitespace-nowrap">
           <Download size={15} /> Series CSV
         </button>
-        <button data-testid="button-export-csv" onClick={onExportCsv} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm bg-primary px-4 text-xs font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:bg-primary/90">
+        <button data-testid="button-export-csv" onClick={onExportCsv} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm bg-primary px-3 sm:px-4 text-xs font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:bg-primary/90 whitespace-nowrap">
           <Download size={15} /> {exported ? 'CSV saved' : 'Export CSV'}
         </button>
       </div>
@@ -529,13 +546,33 @@ function ForecastChart({ forecast, inputs, sessionStartedAt }: { forecast: Marke
        <div className="panel-header flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Directional outlook</div><h2 className="mt-1 font-display text-base font-semibold">Cost forecast with uncertainty</h2></div><div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground"><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-primary" />Expected</span><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-accent/20" />Range</span>{inputs.filter((input) => ['hrc', 'electricity', 'carbon'].includes(input.key)).map((input) => <LiveIndicator key={input.key} input={input} sessionStartedAt={sessionStartedAt} />)}</div></div>
       <div className="p-3 pt-5 sm:p-5">
         <div className="mb-2 flex items-start justify-between"><div><div className="data-mono text-2xl font-semibold">{euro.format(chart.points[0]?.costPerTon ?? 0)}<span className="ml-1 text-xs font-normal text-muted-foreground">/ t today</span></div><div className="mt-1 flex items-center gap-1 text-xs text-destructive"><ArrowUpRight size={13} />{chart.points.length > 1 ? `${euro.format((chart.points.at(-1)?.costPerTon ?? 0) - (chart.points[0]?.costPerTon ?? 0))} by horizon` : 'Awaiting horizon'}</div></div><div className="rounded-sm border border-border bg-secondary/45 px-3 py-2 text-right"><div className="label-caps text-muted-foreground">30-day error</div><div data-testid="text-backtest-score" className="data-mono mt-1 text-sm font-semibold text-accent">{forecast.backtest.rolling30.meanAbsolutePercentageError === null ? 'Awaiting' : `${forecast.backtest.rolling30.meanAbsolutePercentageError.toFixed(1)}%`}</div></div></div>
-        <div className="overflow-x-auto"><svg data-testid="chart-forecast" className="mt-3 min-w-[640px]" viewBox="0 0 760 280" role="img" aria-label="Forecast cost chart with uncertainty range">
-          <g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1="24" y1="32" x2="736" y2="32" /><line x1="24" y1="98" x2="736" y2="98" /><line x1="24" y1="164" x2="736" y2="164" /><line x1="24" y1="228" x2="736" y2="228" /></g>
-          <polygon points={chart.band} fill="hsl(var(--accent) / .13)" />
-          <polyline points={chart.line} fill="none" stroke="hsl(var(--primary))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-          {chart.points.map((point, index) => <g key={point.week}><circle cx={chart.x(index)} cy={chart.y(point.costPerTon)} r={index === 0 ? 5 : 3.5} fill="hsl(var(--card))" stroke="hsl(var(--primary))" strokeWidth="2.5" /><text x={chart.x(index)} y="252" textAnchor="middle" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="10">{point.label}</text>{index === 0 && <text x={chart.x(index)} y={chart.y(point.costPerTon) - 12} textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontWeight="600" fontSize="10">{euro.format(point.costPerTon)}</text>}</g>)}
-          <text x="736" y="26" textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="9">{euro.format(chart.max)}</text><text x="736" y="224" textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="9">{euro.format(chart.min)}</text>
-        </svg></div>
+        <div className="w-full overflow-hidden">
+          <svg data-testid="chart-forecast" className="mt-3 h-auto w-full max-w-full" viewBox="0 0 760 280" role="img" aria-label="Forecast cost chart with uncertainty range">
+            <g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1="24" y1="32" x2="736" y2="32" /><line x1="24" y1="98" x2="736" y2="98" /><line x1="24" y1="164" x2="736" y2="164" /><line x1="24" y1="228" x2="736" y2="228" /></g>
+            <polygon points={chart.band} fill="hsl(var(--accent) / .13)" />
+            <polyline points={chart.line} fill="none" stroke="hsl(var(--primary))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            {chart.points.map((point, index) => {
+              const isKeyPoint = index === 0 || index === chart.points.length - 1 || (chart.points.length > 16 ? index % 4 === 0 : index % 2 === 0);
+              return (
+                <g key={point.week}>
+                  <circle cx={chart.x(index)} cy={chart.y(point.costPerTon)} r={index === 0 ? 5 : 3.5} fill="hsl(var(--card))" stroke="hsl(var(--primary))" strokeWidth="2.5" />
+                  {isKeyPoint && (
+                    <text x={chart.x(index)} y="252" textAnchor="middle" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="10">
+                      {point.label}
+                    </text>
+                  )}
+                  {index === 0 && (
+                    <text x={chart.x(index)} y={chart.y(point.costPerTon) - 12} textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontWeight="600" fontSize="10">
+                      {euro.format(point.costPerTon)}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+            <text x="736" y="26" textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="9">{euro.format(chart.max)}</text>
+            <text x="736" y="224" textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="9">{euro.format(chart.min)}</text>
+          </svg>
+        </div>
         <div className="mt-1 flex items-start gap-2 border-t border-border/70 pt-3 text-[11px] leading-5 text-muted-foreground"><Info size={13} className="mt-0.5 shrink-0" />The shaded range widens with time. Treat the direction as a planning signal and validate near-term orders with suppliers.</div>
       </div>
     </section>
@@ -705,7 +742,7 @@ function ProsConsPanel() {
 function ConfidenceCard({ overview, validation }: { overview: MarketOverview; validation?: MarketValidation }) {
   const circumference = 2 * Math.PI * 29;
   return (
-    <div className="panel flex items-center gap-4 p-5">
+    <div className="panel flex min-h-[128px] items-center gap-4 p-5">
       <div className="relative h-[72px] w-[72px] shrink-0"><svg viewBox="0 0 72 72" className="-rotate-90"><circle cx="36" cy="36" r="29" fill="none" stroke="hsl(var(--secondary))" strokeWidth="7" /><circle data-testid="progress-confidence" cx="36" cy="36" r="29" fill="none" stroke="hsl(var(--accent))" strokeWidth="7" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - overview.confidenceScore / 100)} /></svg><span className="absolute inset-0 flex items-center justify-center data-mono text-sm font-semibold">{overview.confidenceScore}</span></div>
        <div title={validation ? `Derived from ${validation.rows.length}/4 ETS validations, ${validation.freshnessCoverage}% freshness coverage, and ${validation.liveSeriesCount}/4 live series.` : 'Derived from model validation and source freshness.'}><div className="label-caps text-muted-foreground">Signal confidence</div><div data-testid="text-confidence-label" className="mt-1 text-sm font-semibold">{overview.confidenceScore >= 80 ? 'High confidence' : 'Use with care'}</div><p className="mt-1 text-[11px] leading-4 text-muted-foreground">Derived from held-out model error,<br />source coverage, and live series.</p></div>
     </div>
@@ -714,26 +751,26 @@ function ConfidenceCard({ overview, validation }: { overview: MarketOverview; va
 
 function ForecastModelSelector({ model, onChange }: { model: ForecastModel; onChange: (model: ForecastModel) => void }) {
   return (
-    <div className="panel p-5">
+    <div className="panel flex min-h-[128px] flex-col justify-between p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="label-caps text-muted-foreground">Forecast model</div>
           <div className="mt-1 text-sm font-semibold">Choose the model path</div>
         </div>
-        <Zap size={16} className="text-primary" />
+        <Zap size={16} className="text-primary shrink-0" />
       </div>
       <label htmlFor="forecast-model-select" className="sr-only">Forecast model</label>
-      <div className="relative mt-4">
-        <select id="forecast-model-select" data-testid="select-forecast-model" value={model} onChange={(event) => onChange(event.target.value as ForecastModel)} className="w-full appearance-none rounded-sm border border-input bg-background px-3 py-2.5 pr-9 text-sm font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
+      <div className="relative mt-2">
+        <select id="forecast-model-select" data-testid="select-forecast-model" value={model} onChange={(event) => onChange(event.target.value as ForecastModel)} className="w-full appearance-none rounded-sm border border-input bg-background px-3 py-2 pr-9 text-xs font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
           <option value="auto">Auto (best backtested model)</option>
           <option value="naive">Naive baseline</option>
           <option value="ets">Exponential smoothing (ETS)</option>
           <option value="arima">ARIMA</option>
           <option value="sarima">SARIMA</option>
         </select>
-        <ChevronDown size={15} className="pointer-events-none absolute right-3 top-3 text-muted-foreground" />
+        <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-2.5 text-muted-foreground" />
       </div>
-      <p className="mt-2 text-[11px] leading-4 text-muted-foreground">Auto is selected by default. Changing the model updates the forecast profile and calculated cost.</p>
+      <p className="mt-1 text-[10px] leading-3 text-muted-foreground">Auto selects best backtested model</p>
     </div>
   );
 }
@@ -854,12 +891,72 @@ function Home() {
   return (
     <>
       <PageIntro onExportCsv={exportForecast} onExportSeries={exportSeries} onExportPdf={exportPdf} onRefresh={refreshCost} refreshing={refreshing} exported={exported} />
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr]">
-        <div className="panel flex items-center justify-between bg-foreground p-3.5 text-background"><div><div className="label-caps text-background/55">Estimated production cost</div><div data-testid="text-hero-cost" className="mt-1 data-mono text-2xl font-semibold tracking-[-.04em]">{overview ? euro.format(modelBaseCost) : <Skeleton className="h-8 w-28 bg-background/10" />}<span className="ml-1 text-[11px] font-normal tracking-normal text-background/55">/ metric tonne</span></div><div className="mt-1 text-[10px] text-background/55">Current {country} production scenario</div></div><div className="flex h-9 w-9 items-center justify-center rounded-sm bg-primary text-primary-foreground"><Factory size={18} /></div></div>
-         {overview ? <div className="space-y-4"><ConfidenceCard overview={overview} validation={forecast.validation} /><ForecastModelSelector model={forecastModel} onChange={setForecastModel} /><HistoricalPricesPanel series={seriesForChart} inputs={overview.inputs} /></div> : <div className="space-y-4"><div className="panel h-[112px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-32" /></div><div className="panel h-[144px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-4 h-10 w-full" /></div></div>}
-        <div className="panel p-5"><div className="flex items-center justify-between"><div className="label-caps text-muted-foreground">Regional adjustment</div><span className="rounded-sm bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary">{country === 'Germany' ? 'BASE' : 'COUNTRY'}</span></div><div data-testid="text-regional-adjustment" className="mt-3 data-mono text-2xl font-semibold">{overview ? `${overview.adjustment.electricityMultiplier.toFixed(2)}×` : <Skeleton className="h-7 w-20" />}</div><div className="mt-1 text-[11px] text-muted-foreground">Electricity vs. EU baseline</div></div>
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
+        <div className="panel flex min-h-[128px] flex-col justify-between bg-foreground p-5 text-background">
+          <div>
+            <div className="label-caps text-background/55">Estimated production cost</div>
+            <div data-testid="text-hero-cost" className="mt-1.5 data-mono text-2xl sm:text-3xl font-semibold tracking-[-.04em]">
+              {overview ? euro.format(modelBaseCost) : <Skeleton className="h-8 w-28 bg-background/10" />}
+              <span className="ml-1 text-[11px] font-normal tracking-normal text-background/55">/ metric tonne</span>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center justify-between">
+            <div className="text-[10px] text-background/55">Current {country} production scenario</div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-primary text-primary-foreground shrink-0">
+              <Factory size={16} />
+            </div>
+          </div>
+        </div>
+
+        {overview ? (
+          <ConfidenceCard overview={overview} validation={forecast.validation} />
+        ) : (
+          <div className="panel flex min-h-[128px] flex-col justify-center p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-32" /></div>
+        )}
+
+        <ForecastModelSelector model={forecastModel} onChange={setForecastModel} />
+
+        {overview ? (
+          <div className="panel flex min-h-[128px] flex-col justify-between p-5">
+            <div className="flex items-center justify-between">
+              <div className="label-caps text-muted-foreground">Regional adjustment</div>
+              <span className="rounded-sm bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary">{country === 'Germany' ? 'BASE' : 'COUNTRY'}</span>
+            </div>
+            <div>
+              <div data-testid="text-regional-adjustment" className="mt-1.5 data-mono text-2xl sm:text-3xl font-semibold">
+                {overview ? `${overview.adjustment.electricityMultiplier.toFixed(2)}×` : <Skeleton className="h-7 w-20" />}
+              </div>
+              <div className="mt-1 text-[11px] text-muted-foreground">Electricity vs. EU baseline</div>
+            </div>
+          </div>
+        ) : (
+          <div className="panel flex min-h-[128px] flex-col justify-center p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-20" /></div>
+        )}
       </div>
-      {overviewQuery.isError && !overview ? <EmptyOrError error onRetry={() => overviewQuery.refetch()} /> : overview ? <div className="grid gap-5 xl:grid-cols-[minmax(270px,1.05fr)_minmax(270px,.95fr)_minmax(340px,1.5fr)]"><MarketInputPanel overview={overview} sessionStartedAt={sessionStartedAt} /><ScenarioPanel overview={overview} country={country} setCountry={(nextCountry) => { setCountry(nextCountry); setScenario(null); }} onApply={setScenario} /><ContributionPanel overview={overview} baselineCost={modelBaseCost} scenarioCost={scenarioCost} sessionStartedAt={sessionStartedAt} /></div> : <div className="grid gap-5 xl:grid-cols-3"><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /><Skeleton className="mt-8 h-4 w-full" /><Skeleton className="mt-4 h-4 w-4/5" /><Skeleton className="mt-4 h-4 w-11/12" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div></div>}
+
+      {overview && (
+        <div className="mb-6">
+          <HistoricalPricesPanel series={seriesForChart} inputs={overview.inputs} />
+        </div>
+      )}
+
+      {overviewQuery.isError && !overview ? (
+        <EmptyOrError error onRetry={() => overviewQuery.refetch()} />
+      ) : overview ? (
+        <div className="grid gap-5 grid-cols-1 lg:grid-cols-2 xl:grid-cols-[minmax(270px,1.05fr)_minmax(270px,.95fr)_minmax(340px,1.5fr)]">
+          <MarketInputPanel overview={overview} sessionStartedAt={sessionStartedAt} />
+          <ScenarioPanel overview={overview} country={country} setCountry={(nextCountry) => { setCountry(nextCountry); setScenario(null); }} onApply={setScenario} />
+          <div className="lg:col-span-2 xl:col-span-1">
+            <ContributionPanel overview={overview} baselineCost={modelBaseCost} scenarioCost={scenarioCost} sessionStartedAt={sessionStartedAt} />
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-5 grid-cols-1 lg:grid-cols-3">
+          <div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /><Skeleton className="mt-8 h-4 w-full" /><Skeleton className="mt-4 h-4 w-4/5" /><Skeleton className="mt-4 h-4 w-11/12" /></div>
+          <div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div>
+          <div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div>
+        </div>
+      )}
       <div className="mt-5 flex flex-col gap-5">
          <div className="panel overflow-hidden">
            <div className="panel-header flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Planning horizon</div><h2 className="mt-1 font-display text-base font-semibold">Look ahead before you commit volume</h2></div><div data-testid="control-horizon" className="flex rounded-sm border border-border bg-secondary/55 p-1">{[4, 12, 26].map((item) => <button data-testid={`button-horizon-${item}`} key={item} onClick={() => setHorizon(item)} className={`rounded-sm px-3 py-1.5 font-mono text-[11px] ${horizon === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{item === 26 ? '6 months' : `${item} weeks`}</button>)}</div></div>
