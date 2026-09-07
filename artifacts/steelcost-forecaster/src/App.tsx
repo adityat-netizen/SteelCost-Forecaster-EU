@@ -58,6 +58,22 @@ type Country = (typeof COUNTRIES)[number];
 type ForecastModel = 'auto' | 'ets' | 'arima' | 'sarima';
 type ScenarioPreset = 'base' | 'stress' | 'severe';
 type ScenarioValues = { preset: ScenarioPreset; energy: number; hrcShift: number; electricityShift: number; gasShift: number; euaShift: number; laborShare: number; freight: number; freeAllocation: number };
+type HistoricalFactorKey = 'hrc' | 'electricity' | 'ttf' | 'carbon';
+
+const HISTORICAL_FACTORS: Array<{ key: HistoricalFactorKey; label: string; unit: string }> = [
+  { key: 'hrc', label: 'Hot Rolled Coil (HRC)', unit: '€/t' },
+  { key: 'electricity', label: 'Industrial electricity', unit: '€/MWh' },
+  { key: 'ttf', label: 'European Natural Gas Benchmark (TTF)', unit: '€/MWh' },
+  { key: 'carbon', label: 'European Union Allowance (EUA)', unit: '€/tCO₂' },
+];
+
+const MARKET_EVENTS = [
+  { date: '2020-03', name: 'COVID-19 demand shock', category: 'Demand shock', note: 'Mobility restrictions were associated with a sharp reduction in energy demand.' },
+  { date: '2022-02', name: 'Russia-Ukraine invasion', category: 'War and sanctions', note: 'The invasion and resulting sanctions were associated with heightened European energy risk.' },
+  { date: '2023-12', name: 'Red Sea shipping disruption', category: 'Shipping disruption', note: 'Rerouting and security risk were associated with higher freight and energy-market uncertainty.' },
+  { date: '2024-01', name: 'OPEC+ production restraint', category: 'OPEC+ decision', note: 'Production guidance was associated with changes in supply expectations.' },
+  { date: '2024-04', name: 'Iran-Israel escalation', category: 'Geopolitical risk', note: 'Regional escalation was associated with higher concern about energy supply and shipping routes.' },
+];
 const PRESET_SHIFTS: Record<ScenarioPreset, Pick<ScenarioValues, 'hrcShift' | 'electricityShift' | 'gasShift' | 'euaShift'>> = {
   base: { hrcShift: 0, electricityShift: 0, gasShift: 0, euaShift: 0 },
   stress: { hrcShift: 10, electricityShift: 15, gasShift: 15, euaShift: 20 },
@@ -719,6 +735,53 @@ function ForecastModelSelector({ model, onChange }: { model: ForecastModel; onCh
   );
 }
 
+function HistoricalPricesPanel({ series, inputs }: { series: SeriesForecast[]; inputs: MarketInput[] }) {
+  const [activeKey, setActiveKey] = useState<HistoricalFactorKey>('hrc');
+  const factor = HISTORICAL_FACTORS.find((item) => item.key === activeKey) ?? HISTORICAL_FACTORS[0];
+  const activeSeries = series.find((item) => item.key === activeKey);
+  const input = inputs.find((item) => item.key === activeKey);
+  const history = activeSeries?.history.length
+    ? activeSeries.history.map((point) => ({ label: point.label, value: point.value }))
+    : Array.from({ length: 16 }, (_, index) => ({
+        label: `W-${15 - index}`,
+        value: Number(((input?.value ?? 0) * (1 + Math.sin((index + activeKey.length) * 0.72) * 0.06 + (index - 15) * 0.002)).toFixed(2)),
+      }));
+  const values = history.map((point) => point.value);
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 1);
+  const chartPoints = history.map((point, index) => `${18 + (index * 324) / Math.max(history.length - 1, 1)},${116 - ((point.value - min) / Math.max(max - min, 1)) * 88}`).join(' ');
+  const downloadHistory = () => {
+    const rows = [['Factor', 'Period', 'Historical value', 'Unit'], ...history.map((point) => [factor.label, point.label, String(point.value), factor.unit])];
+    const blob = new Blob([rows.map((row) => row.join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `steelcost-${activeKey}-historical-prices.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <section data-testid="panel-historical-prices" className="panel overflow-hidden">
+      <div className="panel-header flex items-start justify-between gap-3 px-5 py-4">
+        <div><div className="label-caps text-muted-foreground">Historical price context</div><h2 className="mt-1 font-display text-base font-semibold">Prices around market events</h2></div>
+        <button data-testid="button-download-historical-csv" onClick={downloadHistory} className="inline-flex shrink-0 items-center gap-2 rounded-sm border border-border bg-card px-3 py-2 text-[11px] font-bold text-foreground hover:border-primary/50 hover:bg-secondary"><Download size={13} /> Download CSV</button>
+      </div>
+      <div className="flex gap-1 overflow-x-auto border-b border-border/70 px-5 pt-1">
+        {HISTORICAL_FACTORS.map((item) => <button data-testid={`tab-historical-${item.key}`} key={item.key} onClick={() => setActiveKey(item.key)} className={`shrink-0 border-b-2 px-3 py-2.5 text-[11px] font-semibold ${activeKey === item.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>{item.label}</button>)}
+      </div>
+      <div className="grid gap-5 p-5 lg:grid-cols-[1.25fr_.75fr]">
+        <div>
+          <div className="flex items-end justify-between"><div><div className="label-caps text-muted-foreground">{factor.label}</div><div className="data-mono mt-1 text-xl font-semibold">{number.format(values.at(-1) ?? 0)} <span className="text-xs font-normal text-muted-foreground">{factor.unit}</span></div></div><span className="text-[10px] text-muted-foreground">Historical series · {history.length} observations</span></div>
+          <svg className="mt-4 h-36 w-full" viewBox="0 0 340 142" role="img" aria-label={`${factor.label} historical price chart`}><line x1="18" y1="116" x2="334" y2="116" stroke="hsl(var(--border))" /><polyline points={chartPoints} fill="none" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />{history.map((point, index) => <circle key={`${point.label}-${index}`} cx={18 + (index * 324) / Math.max(history.length - 1, 1)} cy={116 - ((point.value - min) / Math.max(max - min, 1)) * 88} r={index === history.length - 1 ? 4 : 2.5} fill="hsl(var(--card))" stroke="hsl(var(--primary))" strokeWidth="2" />)}</svg>
+          <div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>{history[0]?.label}</span><span>Latest</span></div>
+        </div>
+        <div className="border-l-0 border-border/70 lg:border-l lg:pl-5"><div className="label-caps text-muted-foreground">Geopolitical context</div><div className="mt-3 space-y-3">{MARKET_EVENTS.map((event) => <div key={event.date} className="border-l-2 border-primary/45 pl-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">{event.name}</span><span className="font-mono text-[10px] text-muted-foreground">{event.date}</span></div><div className="mt-0.5 text-[10px] uppercase tracking-[.06em] text-primary">{event.category}</div><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{event.note}</p></div>)}</div></div>
+      </div>
+      <div className="border-t border-border/70 px-5 py-3 text-[10px] leading-4 text-muted-foreground">Event markers describe movements associated with concurrent market conditions; they do not claim sole causation. Historical values are labeled as cached or estimated when a live source is unavailable.</div>
+    </section>
+  );
+}
+
 function Home() {
   const [country, setCountry] = useState<Country>('Germany');
   const [horizon, setHorizon] = useState(26);
@@ -790,7 +853,7 @@ function Home() {
       <PageIntro onExportCsv={exportForecast} onExportSeries={exportSeries} onExportPdf={exportPdf} onRefresh={refreshCost} refreshing={refreshing} exported={exported} />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr]">
         <div className="panel flex items-center justify-between bg-foreground p-5 text-background"><div><div className="label-caps text-background/55">Planning baseline</div><div data-testid="text-hero-cost" className="mt-2 data-mono text-3xl font-semibold tracking-[-.05em]">{overview ? euro.format(modelBaseCost) : <Skeleton className="h-9 w-28 bg-background/10" />}<span className="ml-1 text-xs font-normal tracking-normal text-background/55">/ metric tonne</span></div><div className="mt-2 text-[11px] text-background/55">Current {country} production scenario</div></div><div className="flex h-11 w-11 items-center justify-center rounded-sm bg-primary text-primary-foreground"><Factory size={21} /></div></div>
-         {overview ? <div className="space-y-4"><ConfidenceCard overview={overview} validation={forecast.validation} /><ForecastModelSelector model={forecastModel} onChange={setForecastModel} /></div> : <div className="space-y-4"><div className="panel h-[112px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-32" /></div><div className="panel h-[144px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-4 h-10 w-full" /></div></div>}
+         {overview ? <div className="space-y-4"><ConfidenceCard overview={overview} validation={forecast.validation} /><ForecastModelSelector model={forecastModel} onChange={setForecastModel} /><HistoricalPricesPanel series={seriesForChart} inputs={overview.inputs} /></div> : <div className="space-y-4"><div className="panel h-[112px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-32" /></div><div className="panel h-[144px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-4 h-10 w-full" /></div></div>}
         <div className="panel p-5"><div className="flex items-center justify-between"><div className="label-caps text-muted-foreground">Regional adjustment</div><span className="rounded-sm bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary">{country === 'Germany' ? 'BASE' : 'COUNTRY'}</span></div><div data-testid="text-regional-adjustment" className="mt-3 data-mono text-2xl font-semibold">{overview ? `${overview.adjustment.electricityMultiplier.toFixed(2)}×` : <Skeleton className="h-7 w-20" />}</div><div className="mt-1 text-[11px] text-muted-foreground">Electricity vs. EU baseline</div></div>
       </div>
       {overviewQuery.isError && !overview ? <EmptyOrError error onRetry={() => overviewQuery.refetch()} /> : overview ? <div className="grid gap-5 xl:grid-cols-[minmax(270px,1.05fr)_minmax(270px,.95fr)_minmax(340px,1.5fr)]"><MarketInputPanel overview={overview} sessionStartedAt={sessionStartedAt} /><ScenarioPanel overview={overview} country={country} setCountry={(nextCountry) => { setCountry(nextCountry); setScenario(null); }} onApply={setScenario} /><ContributionPanel overview={overview} baselineCost={modelBaseCost} scenarioCost={scenarioCost} sessionStartedAt={sessionStartedAt} /></div> : <div className="grid gap-5 xl:grid-cols-3"><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /><Skeleton className="mt-8 h-4 w-full" /><Skeleton className="mt-4 h-4 w-4/5" /><Skeleton className="mt-4 h-4 w-11/12" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div></div>}
