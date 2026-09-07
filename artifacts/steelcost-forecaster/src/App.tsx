@@ -176,8 +176,8 @@ function seriesShift(key: string, scenario?: ScenarioValues | null) {
   return 0;
 }
 
-function applySeriesScenario(series: SeriesForecast[], scenario?: ScenarioValues | null) {
-  return series.map((item) => {
+function applySeriesScenario(series: SeriesForecast[] | undefined, scenario?: ScenarioValues | null) {
+  return (series ?? FALLBACK_FORECAST.series).map((item) => {
     const shift = seriesShift(item.key, scenario) / 100;
     return {
       ...item,
@@ -672,9 +672,17 @@ function Home() {
   const overviewQuery = useGetMarketOverview({ country }, { query: { queryKey: getGetMarketOverviewQueryKey({ country }), staleTime: 300_000, refetchInterval: 60_000 } });
   const forecastQuery = useGetMarketForecast({ country, horizon }, { query: { queryKey: getGetMarketForecastQueryKey({ country, horizon }), staleTime: 300_000, refetchInterval: 60_000 } });
   const backtestQuery = useGetMarketBacktest({ country }, { query: { queryKey: getGetMarketBacktestQueryKey({ country }), staleTime: 300_000, refetchInterval: 60_000 } });
-  const overview = overviewQuery.data ?? (overviewQuery.isLoading ? undefined : { ...FALLBACK_OVERVIEW, country, adjustment: { ...FALLBACK_OVERVIEW.adjustment, country } });
-  const forecast = forecastQuery.data ?? { ...FALLBACK_FORECAST, country, horizon };
-  const backtest = backtestQuery.data ?? forecast.backtest;
+  const overview = overviewQuery.data?.adjustment
+    ? overviewQuery.data
+    : overviewQuery.isLoading
+      ? undefined
+      : { ...FALLBACK_OVERVIEW, country, adjustment: { ...FALLBACK_OVERVIEW.adjustment, country } };
+  const forecast = forecastQuery.data?.points && forecastQuery.data.series && forecastQuery.data.backtest
+    ? forecastQuery.data
+    : { ...FALLBACK_FORECAST, country, horizon };
+  const backtest = backtestQuery.data?.rolling30 && backtestQuery.data.rolling90
+    ? backtestQuery.data
+    : forecast.backtest;
   const scenarioCost = overview && scenario ? Math.round(overview.baseCostPerTon * (1 + (0.74 * scenario.hrcShift + 0.08 * scenario.electricityShift + 0.04 * scenario.gasShift + 0.02 * scenario.euaShift) / 100) + (scenario.energy - 86.4) * 1.2 + (scenario.laborShare - 7) * overview.baseCostPerTon * 0.01 + (scenario.freight - 42) * 0.5 + (85 - scenario.freeAllocation) * 0.45) : undefined;
   const forecastForChart = useMemo<MarketForecast>(() => {
     if (!scenarioCost || !overview) return forecast;
