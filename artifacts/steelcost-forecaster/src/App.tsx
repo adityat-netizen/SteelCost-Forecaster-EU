@@ -310,7 +310,7 @@ function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-function PageIntro({ onExportCsv, onExportSeries, onExportPdf, exported }: { onExportCsv: () => void; onExportSeries: () => void; onExportPdf: () => void; exported: boolean }) {
+function PageIntro({ onExportCsv, onExportSeries, onExportPdf, onRefresh, refreshing, exported }: { onExportCsv: () => void; onExportSeries: () => void; onExportPdf: () => void; onRefresh: () => void; refreshing: boolean; exported: boolean }) {
   return (
     <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end">
       <div>
@@ -319,6 +319,9 @@ function PageIntro({ onExportCsv, onExportSeries, onExportPdf, exported }: { onE
         <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">A clear view of what your next tonne could cost — grounded in current EU market signals and transparent assumptions.</p>
       </div>
       <div className="print-hide flex flex-wrap gap-2 self-start md:self-end">
+        <button data-testid="button-refresh-cost" onClick={onRefresh} disabled={refreshing} aria-label="Refresh cost" className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-card px-4 text-xs font-bold text-foreground shadow-sm hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary disabled:cursor-wait disabled:opacity-60">
+          <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} /> {refreshing ? 'Refreshing' : 'Refresh cost'}
+        </button>
         <button data-testid="button-export-pdf" onClick={onExportPdf} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-card px-4 text-xs font-bold text-foreground shadow-sm hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary">
           <Printer size={15} /> Save PDF
         </button>
@@ -668,6 +671,7 @@ function Home() {
   const [horizon, setHorizon] = useState(26);
   const [scenario, setScenario] = useState<ScenarioValues | null>(null);
   const [exported, setExported] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [sessionStartedAt] = useState(() => Date.now());
   const overviewQuery = useGetMarketOverview({ country }, { query: { queryKey: getGetMarketOverviewQueryKey({ country }), staleTime: 300_000, refetchInterval: 60_000 } });
   const forecastQuery = useGetMarketForecast({ country, horizon }, { query: { queryKey: getGetMarketForecastQueryKey({ country, horizon }), staleTime: 300_000, refetchInterval: 60_000 } });
@@ -683,6 +687,14 @@ function Home() {
   const backtest = backtestQuery.data?.rolling30 && backtestQuery.data.rolling90
     ? backtestQuery.data
     : forecast.backtest;
+  const refreshCost = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([overviewQuery.refetch(), forecastQuery.refetch(), backtestQuery.refetch()]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const scenarioCost = overview && scenario ? Math.round(overview.baseCostPerTon * (1 + (0.74 * scenario.hrcShift + 0.08 * scenario.electricityShift + 0.04 * scenario.gasShift + 0.02 * scenario.euaShift) / 100) + (scenario.energy - 86.4) * 1.2 + (scenario.laborShare - 7) * overview.baseCostPerTon * 0.01 + (scenario.freight - 42) * 0.5 + (85 - scenario.freeAllocation) * 0.45) : undefined;
   const forecastForChart = useMemo<MarketForecast>(() => {
     if (!scenarioCost || !overview) return forecast;
@@ -719,7 +731,7 @@ function Home() {
   const exportPdf = () => window.print();
   return (
     <>
-      <PageIntro onExportCsv={exportForecast} onExportSeries={exportSeries} onExportPdf={exportPdf} exported={exported} />
+      <PageIntro onExportCsv={exportForecast} onExportSeries={exportSeries} onExportPdf={exportPdf} onRefresh={refreshCost} refreshing={refreshing} exported={exported} />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr]">
         <div className="panel flex items-center justify-between bg-foreground p-5 text-background"><div><div className="label-caps text-background/55">Planning baseline</div><div data-testid="text-hero-cost" className="mt-2 data-mono text-3xl font-semibold tracking-[-.05em]">{overview ? euro.format(overview.baseCostPerTon) : <Skeleton className="h-9 w-28 bg-background/10" />}<span className="ml-1 text-xs font-normal tracking-normal text-background/55">/ metric tonne</span></div><div className="mt-2 text-[11px] text-background/55">Current {country} production scenario</div></div><div className="flex h-11 w-11 items-center justify-center rounded-sm bg-primary text-primary-foreground"><Factory size={21} /></div></div>
          {overview ? <ConfidenceCard overview={overview} validation={forecast.validation} /> : <div className="panel h-[112px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-32" /></div>}
