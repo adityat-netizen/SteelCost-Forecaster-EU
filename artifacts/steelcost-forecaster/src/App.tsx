@@ -55,7 +55,7 @@ import { LiveIndicator } from '@/components/live-indicator';
 const queryClient = new QueryClient();
 const COUNTRIES = ['Germany', 'France', 'Italy', 'Poland', 'Spain', 'Netherlands', 'Belgium'] as const;
 type Country = (typeof COUNTRIES)[number];
-type ForecastModel = 'auto' | 'ets' | 'arima' | 'sarima';
+type ForecastModel = 'auto' | 'naive' | 'ets' | 'arima' | 'sarima';
 type ScenarioPreset = 'base' | 'stress' | 'severe';
 type ScenarioValues = { preset: ScenarioPreset; energy: number; hrcShift: number; electricityShift: number; gasShift: number; euaShift: number; laborShare: number; freight: number; freeAllocation: number };
 type HistoricalFactorKey = 'hrc' | 'electricity' | 'ttf' | 'carbon';
@@ -179,6 +179,8 @@ const FALLBACK_ASSUMPTIONS: MarketAssumptions = {
     { label: 'Freight & Brent', detail: 'Providers: managed EU corridor freight feed and EIA Brent spot feed.', status: 'estimated', refresh: 'Monthly / daily · fallback: last successful value, then maintained reference' },
     { label: 'Consumables & plant utilities', detail: 'Pickling acid, rolling oil, work rolls, water, and compressed air remain maintained estimates because no liquid official EU-wide feed exists.', status: 'estimated', refresh: 'Monthly model reference · fallback: maintained estimate' },
   ],
+  sourceRegistry: [],
+  migrationChecklist: [],
 };
 
 const euro = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
@@ -724,6 +726,7 @@ function ForecastModelSelector({ model, onChange }: { model: ForecastModel; onCh
       <div className="relative mt-4">
         <select id="forecast-model-select" data-testid="select-forecast-model" value={model} onChange={(event) => onChange(event.target.value as ForecastModel)} className="w-full appearance-none rounded-sm border border-input bg-background px-3 py-2.5 pr-9 text-sm font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
           <option value="auto">Auto (best backtested model)</option>
+          <option value="naive">Naive baseline</option>
           <option value="ets">Exponential smoothing (ETS)</option>
           <option value="arima">ARIMA</option>
           <option value="sarima">SARIMA</option>

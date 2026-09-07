@@ -1,0 +1,6 @@
+{
+  "buildCommand": "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/steelcost-forecaster build",
+  "outputDirectory": "artifacts/steelcost-forecaster/dist/public",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": "vite"
+}
