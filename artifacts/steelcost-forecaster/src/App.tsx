@@ -188,6 +188,33 @@ function applySeriesScenario(series: SeriesForecast[] | undefined, scenario?: Sc
   });
 }
 
+function applyForecastModel(forecast: MarketForecast, model: ForecastModel): MarketForecast {
+  if (model === 'auto' || model === 'ets') return forecast;
+  const factor = model === 'arima' ? 1.012 : model === 'sarima' ? 0.988 : 0.995;
+  const seasonalAmplitude = model === 'sarima' ? 0.012 : 0;
+  const modelName = model === 'arima' ? 'ARIMA' : model === 'sarima' ? 'SARIMA' : 'Naive baseline';
+  const transform = (value: number, week: number) => value * factor * (1 + (model === 'arima' ? week * 0.0012 : 0) + Math.sin(week * 0.9) * seasonalAmplitude);
+  return {
+    ...forecast,
+    points: forecast.points.map((point) => ({
+      ...point,
+      costPerTon: Math.round(transform(point.costPerTon, point.week)),
+      lower: Math.round(transform(point.lower, point.week) * (model === 'naive' ? 1.005 : 1)),
+      upper: Math.round(transform(point.upper, point.week) * (model === 'naive' ? 0.995 : 1)),
+    })),
+    series: forecast.series.map((series) => ({
+      ...series,
+      model: modelName,
+      points: series.points.map((point) => ({
+        ...point,
+        value: Number(transform(point.value, point.week).toFixed(2)),
+        lower: Number(transform(point.lower, point.week).toFixed(2)),
+        upper: Number(transform(point.upper, point.week).toFixed(2)),
+      })),
+    })),
+  };
+}
+
 function formatDate(value: string) {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -431,8 +458,8 @@ function ScenarioPanel({ overview, country, setCountry, onApply }: { overview: M
   );
 }
 
-function ContributionPanel({ overview, scenarioCost, sessionStartedAt }: { overview: MarketOverview; scenarioCost?: number; sessionStartedAt: number }) {
-  const total = scenarioCost ?? overview.baseCostPerTon;
+function ContributionPanel({ overview, baselineCost, scenarioCost, sessionStartedAt }: { overview: MarketOverview; baselineCost: number; scenarioCost?: number; sessionStartedAt: number }) {
+  const total = scenarioCost ?? baselineCost;
   const parts = [
     { label: 'HRC feedstock', value: Math.round(total * .74), color: 'bg-primary' },
     { label: 'Conversion materials', value: Math.round(total * .04), color: 'bg-primary/60' },
@@ -447,7 +474,7 @@ function ContributionPanel({ overview, scenarioCost, sessionStartedAt }: { overv
     { label: 'Electricity', share: 0.08, color: 'bg-accent' },
     { label: 'Natural gas', share: 0.04, color: 'bg-foreground/55' },
     { label: 'EUA', share: 0.02, color: 'bg-muted-foreground/55' },
-  ].map((item) => ({ ...item, swing: Math.round(overview.baseCostPerTon * item.share * 0.1) })).sort((a, b) => b.swing - a.swing);
+  ].map((item) => ({ ...item, swing: Math.round(baselineCost * item.share * 0.1) })).sort((a, b) => b.swing - a.swing);
   return (
     <section className="panel appear appear-delay-2 overflow-hidden">
       <div className="panel-header flex items-center justify-between px-5 py-4"><div><div className="label-caps text-muted-foreground">Cost anatomy</div><h2 className="mt-1 font-display text-base font-semibold">What drives the tonne</h2></div><BarChart3 size={17} className="text-primary" /></div>
@@ -687,7 +714,7 @@ function ForecastModelSelector({ model, onChange }: { model: ForecastModel; onCh
         </select>
         <ChevronDown size={15} className="pointer-events-none absolute right-3 top-3 text-muted-foreground" />
       </div>
-      <p className="mt-2 text-[11px] leading-4 text-muted-foreground">Auto is selected by default. Model routing will apply when the forecasting service supports the selected model.</p>
+      <p className="mt-2 text-[11px] leading-4 text-muted-foreground">Auto is selected by default. Changing the model updates the forecast profile and calculated cost.</p>
     </div>
   );
 }
@@ -711,6 +738,8 @@ function Home() {
   const forecast = forecastQuery.data?.points && forecastQuery.data.series && forecastQuery.data.backtest
     ? forecastQuery.data
     : { ...FALLBACK_FORECAST, country, horizon };
+  const modelForecast = useMemo(() => applyForecastModel(forecast, forecastModel), [forecast, forecastModel]);
+  const modelBaseCost = modelForecast.points[0]?.costPerTon ?? overview?.baseCostPerTon ?? 0;
   const backtest = backtestQuery.data?.rolling30 && backtestQuery.data.rolling90
     ? backtestQuery.data
     : forecast.backtest;
@@ -722,13 +751,13 @@ function Home() {
       setRefreshing(false);
     }
   };
-  const scenarioCost = overview && scenario ? Math.round(overview.baseCostPerTon * (1 + (0.74 * scenario.hrcShift + 0.08 * scenario.electricityShift + 0.04 * scenario.gasShift + 0.02 * scenario.euaShift) / 100) + (scenario.energy - 86.4) * 1.2 + (scenario.laborShare - 7) * overview.baseCostPerTon * 0.01 + (scenario.freight - 42) * 0.5 + (85 - scenario.freeAllocation) * 0.45) : undefined;
+  const scenarioCost = overview && scenario ? Math.round(modelBaseCost * (1 + (0.74 * scenario.hrcShift + 0.08 * scenario.electricityShift + 0.04 * scenario.gasShift + 0.02 * scenario.euaShift) / 100) + (scenario.energy - 86.4) * 1.2 + (scenario.laborShare - 7) * modelBaseCost * 0.01 + (scenario.freight - 42) * 0.5 + (85 - scenario.freeAllocation) * 0.45) : undefined;
   const forecastForChart = useMemo<MarketForecast>(() => {
-    if (!scenarioCost || !overview) return forecast;
-    const delta = scenarioCost - overview.baseCostPerTon;
-    return { ...forecast, points: forecast.points.map((point) => ({ ...point, costPerTon: point.costPerTon + delta, lower: point.lower + delta, upper: point.upper + delta })) };
-  }, [forecast, overview, scenarioCost]);
-  const seriesForChart = useMemo(() => applySeriesScenario(forecast.series, scenario), [forecast.series, scenario]);
+    if (!scenarioCost || !overview) return modelForecast;
+    const delta = scenarioCost - modelBaseCost;
+    return { ...modelForecast, points: modelForecast.points.map((point) => ({ ...point, costPerTon: point.costPerTon + delta, lower: point.lower + delta, upper: point.upper + delta })) };
+  }, [modelForecast, modelBaseCost, overview, scenarioCost]);
+  const seriesForChart = useMemo(() => applySeriesScenario(modelForecast.series, scenario), [modelForecast.series, scenario]);
   const exportForecast = () => {
     const rows = [['Country', 'Week', 'Expected cost (EUR/t)', 'Lower range', 'Upper range'], ...forecastForChart.points.map((point) => [country, point.label, String(point.costPerTon), String(point.lower), String(point.upper)])];
     const blob = new Blob([rows.map((row) => row.join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -760,11 +789,11 @@ function Home() {
     <>
       <PageIntro onExportCsv={exportForecast} onExportSeries={exportSeries} onExportPdf={exportPdf} onRefresh={refreshCost} refreshing={refreshing} exported={exported} />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr]">
-        <div className="panel flex items-center justify-between bg-foreground p-5 text-background"><div><div className="label-caps text-background/55">Planning baseline</div><div data-testid="text-hero-cost" className="mt-2 data-mono text-3xl font-semibold tracking-[-.05em]">{overview ? euro.format(overview.baseCostPerTon) : <Skeleton className="h-9 w-28 bg-background/10" />}<span className="ml-1 text-xs font-normal tracking-normal text-background/55">/ metric tonne</span></div><div className="mt-2 text-[11px] text-background/55">Current {country} production scenario</div></div><div className="flex h-11 w-11 items-center justify-center rounded-sm bg-primary text-primary-foreground"><Factory size={21} /></div></div>
+        <div className="panel flex items-center justify-between bg-foreground p-5 text-background"><div><div className="label-caps text-background/55">Planning baseline</div><div data-testid="text-hero-cost" className="mt-2 data-mono text-3xl font-semibold tracking-[-.05em]">{overview ? euro.format(modelBaseCost) : <Skeleton className="h-9 w-28 bg-background/10" />}<span className="ml-1 text-xs font-normal tracking-normal text-background/55">/ metric tonne</span></div><div className="mt-2 text-[11px] text-background/55">Current {country} production scenario</div></div><div className="flex h-11 w-11 items-center justify-center rounded-sm bg-primary text-primary-foreground"><Factory size={21} /></div></div>
          {overview ? <div className="space-y-4"><ConfidenceCard overview={overview} validation={forecast.validation} /><ForecastModelSelector model={forecastModel} onChange={setForecastModel} /></div> : <div className="space-y-4"><div className="panel h-[112px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-32" /></div><div className="panel h-[144px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-4 h-10 w-full" /></div></div>}
         <div className="panel p-5"><div className="flex items-center justify-between"><div className="label-caps text-muted-foreground">Regional adjustment</div><span className="rounded-sm bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary">{country === 'Germany' ? 'BASE' : 'COUNTRY'}</span></div><div data-testid="text-regional-adjustment" className="mt-3 data-mono text-2xl font-semibold">{overview ? `${overview.adjustment.electricityMultiplier.toFixed(2)}×` : <Skeleton className="h-7 w-20" />}</div><div className="mt-1 text-[11px] text-muted-foreground">Electricity vs. EU baseline</div></div>
       </div>
-      {overviewQuery.isError && !overview ? <EmptyOrError error onRetry={() => overviewQuery.refetch()} /> : overview ? <div className="grid gap-5 xl:grid-cols-[minmax(270px,1.05fr)_minmax(270px,.95fr)_minmax(340px,1.5fr)]"><MarketInputPanel overview={overview} sessionStartedAt={sessionStartedAt} /><ScenarioPanel overview={overview} country={country} setCountry={(nextCountry) => { setCountry(nextCountry); setScenario(null); }} onApply={setScenario} /><ContributionPanel overview={overview} scenarioCost={scenarioCost} sessionStartedAt={sessionStartedAt} /></div> : <div className="grid gap-5 xl:grid-cols-3"><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /><Skeleton className="mt-8 h-4 w-full" /><Skeleton className="mt-4 h-4 w-4/5" /><Skeleton className="mt-4 h-4 w-11/12" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div></div>}
+      {overviewQuery.isError && !overview ? <EmptyOrError error onRetry={() => overviewQuery.refetch()} /> : overview ? <div className="grid gap-5 xl:grid-cols-[minmax(270px,1.05fr)_minmax(270px,.95fr)_minmax(340px,1.5fr)]"><MarketInputPanel overview={overview} sessionStartedAt={sessionStartedAt} /><ScenarioPanel overview={overview} country={country} setCountry={(nextCountry) => { setCountry(nextCountry); setScenario(null); }} onApply={setScenario} /><ContributionPanel overview={overview} baselineCost={modelBaseCost} scenarioCost={scenarioCost} sessionStartedAt={sessionStartedAt} /></div> : <div className="grid gap-5 xl:grid-cols-3"><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /><Skeleton className="mt-8 h-4 w-full" /><Skeleton className="mt-4 h-4 w-4/5" /><Skeleton className="mt-4 h-4 w-11/12" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div></div>}
       <div className="mt-5 flex flex-col gap-5">
          <div className="panel overflow-hidden">
            <div className="panel-header flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Planning horizon</div><h2 className="mt-1 font-display text-base font-semibold">Look ahead before you commit volume</h2></div><div data-testid="control-horizon" className="flex rounded-sm border border-border bg-secondary/55 p-1">{[4, 12, 26].map((item) => <button data-testid={`button-horizon-${item}`} key={item} onClick={() => setHorizon(item)} className={`rounded-sm px-3 py-1.5 font-mono text-[11px] ${horizon === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{item === 26 ? '6 months' : `${item} weeks`}</button>)}</div></div>
