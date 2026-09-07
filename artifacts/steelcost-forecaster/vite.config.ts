@@ -62,7 +62,7 @@ export default defineConfig({
   root: path.resolve(import.meta.dirname),
   publicDir: false,
   build: {
-    outDir: path.resolve(import.meta.dirname, 'public'),
+    outDir: path.resolve(import.meta.dirname, '../../public'),
     emptyOutDir: true,
   },
   server: {
