@@ -55,6 +55,7 @@ import { LiveIndicator } from '@/components/live-indicator';
 const queryClient = new QueryClient();
 const COUNTRIES = ['Germany', 'France', 'Italy', 'Poland', 'Spain', 'Netherlands', 'Belgium'] as const;
 type Country = (typeof COUNTRIES)[number];
+type ForecastModel = 'auto' | 'ets' | 'arima' | 'sarima';
 type ScenarioPreset = 'base' | 'stress' | 'severe';
 type ScenarioValues = { preset: ScenarioPreset; energy: number; hrcShift: number; electricityShift: number; gasShift: number; euaShift: number; laborShare: number; freight: number; freeAllocation: number };
 const PRESET_SHIFTS: Record<ScenarioPreset, Pick<ScenarioValues, 'hrcShift' | 'electricityShift' | 'gasShift' | 'euaShift'>> = {
@@ -666,9 +667,35 @@ function ConfidenceCard({ overview, validation }: { overview: MarketOverview; va
   );
 }
 
+function ForecastModelSelector({ model, onChange }: { model: ForecastModel; onChange: (model: ForecastModel) => void }) {
+  return (
+    <div className="panel p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="label-caps text-muted-foreground">Forecast model</div>
+          <div className="mt-1 text-sm font-semibold">Choose the model path</div>
+        </div>
+        <Zap size={16} className="text-primary" />
+      </div>
+      <label htmlFor="forecast-model-select" className="sr-only">Forecast model</label>
+      <div className="relative mt-4">
+        <select id="forecast-model-select" data-testid="select-forecast-model" value={model} onChange={(event) => onChange(event.target.value as ForecastModel)} className="w-full appearance-none rounded-sm border border-input bg-background px-3 py-2.5 pr-9 text-sm font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
+          <option value="auto">Auto (best backtested model)</option>
+          <option value="ets">Exponential smoothing (ETS)</option>
+          <option value="arima">ARIMA</option>
+          <option value="sarima">SARIMA</option>
+        </select>
+        <ChevronDown size={15} className="pointer-events-none absolute right-3 top-3 text-muted-foreground" />
+      </div>
+      <p className="mt-2 text-[11px] leading-4 text-muted-foreground">Auto is selected by default. Model routing will apply when the forecasting service supports the selected model.</p>
+    </div>
+  );
+}
+
 function Home() {
   const [country, setCountry] = useState<Country>('Germany');
   const [horizon, setHorizon] = useState(26);
+  const [forecastModel, setForecastModel] = useState<ForecastModel>('auto');
   const [scenario, setScenario] = useState<ScenarioValues | null>(null);
   const [exported, setExported] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -734,7 +761,7 @@ function Home() {
       <PageIntro onExportCsv={exportForecast} onExportSeries={exportSeries} onExportPdf={exportPdf} onRefresh={refreshCost} refreshing={refreshing} exported={exported} />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr]">
         <div className="panel flex items-center justify-between bg-foreground p-5 text-background"><div><div className="label-caps text-background/55">Planning baseline</div><div data-testid="text-hero-cost" className="mt-2 data-mono text-3xl font-semibold tracking-[-.05em]">{overview ? euro.format(overview.baseCostPerTon) : <Skeleton className="h-9 w-28 bg-background/10" />}<span className="ml-1 text-xs font-normal tracking-normal text-background/55">/ metric tonne</span></div><div className="mt-2 text-[11px] text-background/55">Current {country} production scenario</div></div><div className="flex h-11 w-11 items-center justify-center rounded-sm bg-primary text-primary-foreground"><Factory size={21} /></div></div>
-         {overview ? <ConfidenceCard overview={overview} validation={forecast.validation} /> : <div className="panel h-[112px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-32" /></div>}
+         {overview ? <div className="space-y-4"><ConfidenceCard overview={overview} validation={forecast.validation} /><ForecastModelSelector model={forecastModel} onChange={setForecastModel} /></div> : <div className="space-y-4"><div className="panel h-[112px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-32" /></div><div className="panel h-[144px] p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-4 h-10 w-full" /></div></div>}
         <div className="panel p-5"><div className="flex items-center justify-between"><div className="label-caps text-muted-foreground">Regional adjustment</div><span className="rounded-sm bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary">{country === 'Germany' ? 'BASE' : 'COUNTRY'}</span></div><div data-testid="text-regional-adjustment" className="mt-3 data-mono text-2xl font-semibold">{overview ? `${overview.adjustment.electricityMultiplier.toFixed(2)}×` : <Skeleton className="h-7 w-20" />}</div><div className="mt-1 text-[11px] text-muted-foreground">Electricity vs. EU baseline</div></div>
       </div>
       {overviewQuery.isError && !overview ? <EmptyOrError error onRetry={() => overviewQuery.refetch()} /> : overview ? <div className="grid gap-5 xl:grid-cols-[minmax(270px,1.05fr)_minmax(270px,.95fr)_minmax(340px,1.5fr)]"><MarketInputPanel overview={overview} sessionStartedAt={sessionStartedAt} /><ScenarioPanel overview={overview} country={country} setCountry={(nextCountry) => { setCountry(nextCountry); setScenario(null); }} onApply={setScenario} /><ContributionPanel overview={overview} scenarioCost={scenarioCost} sessionStartedAt={sessionStartedAt} /></div> : <div className="grid gap-5 xl:grid-cols-3"><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /><Skeleton className="mt-8 h-4 w-full" /><Skeleton className="mt-4 h-4 w-4/5" /><Skeleton className="mt-4 h-4 w-11/12" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div><div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div></div>}
