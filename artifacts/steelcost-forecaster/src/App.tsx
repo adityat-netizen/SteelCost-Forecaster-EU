@@ -68,13 +68,14 @@ const HISTORICAL_FACTORS: Array<{ key: HistoricalFactorKey; label: string; unit:
   { key: 'carbon', label: 'European Union Allowance (EUA)', unit: '€/tCO₂' },
 ];
 
-const MARKET_EVENTS = [
-  { date: '2020-03', name: 'COVID-19 demand shock', category: 'Demand shock', note: 'Mobility restrictions were associated with a sharp reduction in energy demand.' },
-  { date: '2022-02', name: 'Russia-Ukraine invasion', category: 'War and sanctions', note: 'The invasion and resulting sanctions were associated with heightened European energy risk.' },
-  { date: '2023-12', name: 'Red Sea shipping disruption', category: 'Shipping disruption', note: 'Rerouting and security risk were associated with higher freight and energy-market uncertainty.' },
-  { date: '2024-01', name: 'OPEC+ production restraint', category: 'OPEC+ decision', note: 'Production guidance was associated with changes in supply expectations.' },
-  { date: '2024-04', name: 'Iran-Israel escalation', category: 'Geopolitical risk', note: 'Regional escalation was associated with higher concern about energy supply and shipping routes.' },
+const MARKET_EVENTS: Array<{ date: string; name: string; category: string; note: string; factorMoves: Partial<Record<HistoricalFactorKey, number>> }> = [
+ { date: '2020-03', name: 'COVID-19 demand shock', category: 'Demand shock', note: 'Mobility restrictions were associated with a sharp reduction in energy demand.', factorMoves: { hrc: -18, electricity: -12, ttf: -35, carbon: -28 } },
+ { date: '2022-02', name: 'Russia-Ukraine invasion', category: 'War and sanctions', note: 'The invasion and resulting sanctions were associated with heightened European energy risk.', factorMoves: { hrc: 22, electricity: 58, ttf: 92, carbon: 14 } },
+ { date: '2023-12', name: 'Red Sea shipping disruption', category: 'Shipping disruption', note: 'Rerouting and security risk were associated with higher freight and energy-market uncertainty.', factorMoves: { hrc: 8, electricity: 5, ttf: 11 } },
+ { date: '2024-01', name: 'OPEC+ production restraint', category: 'OPEC+ decision', note: 'Production guidance was associated with changes in supply expectations.', factorMoves: { hrc: 6, ttf: 4 } },
+ { date: '2024-04', name: 'Iran-Israel escalation', category: 'Geopolitical risk', note: 'Regional escalation was associated with higher concern about energy supply and shipping routes.', factorMoves: { electricity: 9, ttf: 16, carbon: 5 } },
 ];
+const FACTOR_COST_SHARES: Record<HistoricalFactorKey, number> = { hrc: 0.74, electricity: 0.08, ttf: 0.04, carbon: 0.02 };
 const PRESET_SHIFTS: Record<ScenarioPreset, Pick<ScenarioValues, 'hrcShift' | 'electricityShift' | 'gasShift' | 'euaShift'>> = {
   base: { hrcShift: 0, electricityShift: 0, gasShift: 0, euaShift: 0 },
   stress: { hrcShift: 10, electricityShift: 15, gasShift: 15, euaShift: 20 },
@@ -102,6 +103,65 @@ function fallbackInput(
   return { key, label, value, unit, freshness, source, provenanceKind, provenanceNote, updatedAt: lastFetchedAt, lastFetchedAt, sourceRefreshInterval, nextExpectedUpdate: next.toISOString(), statusMessage };
 }
 
+const COUNTRY_ADJUSTMENTS: Record<Country, {
+  electricityMultiplier: number;
+  laborMultiplier: number;
+  freightMultiplier: number;
+  subsidyNote: string;
+}> = {
+  Germany: {
+    electricityMultiplier: 1.08,
+    laborMultiplier: 1.12,
+    freightMultiplier: 0.98,
+    subsidyNote: 'Moderate industrial power relief; green transition funding varies by program.',
+  },
+  France: {
+    electricityMultiplier: 0.86,
+    laborMultiplier: 1.08,
+    freightMultiplier: 1.02,
+    subsidyNote: 'Lower power factor benefits from a nuclear-heavy generation mix.',
+  },
+  Italy: {
+    electricityMultiplier: 1.16,
+    laborMultiplier: 0.96,
+    freightMultiplier: 1.08,
+    subsidyNote: 'Higher power exposure; port access can offset some inbound freight.',
+  },
+  Poland: {
+    electricityMultiplier: 1.02,
+    laborMultiplier: 0.72,
+    freightMultiplier: 1.08,
+    subsidyNote: 'Lower labor base; coal-linked power mix creates higher carbon sensitivity.',
+  },
+  Spain: {
+    electricityMultiplier: 0.91,
+    laborMultiplier: 0.88,
+    freightMultiplier: 1.04,
+    subsidyNote: 'Renewables support lower modeled power cost in several regions.',
+  },
+  Netherlands: {
+    electricityMultiplier: 1.03,
+    laborMultiplier: 1.06,
+    freightMultiplier: 0.88,
+    subsidyNote: 'Port proximity reduces inbound logistics friction for imported feedstock.',
+  },
+  Belgium: {
+    electricityMultiplier: 0.98,
+    laborMultiplier: 1.04,
+    freightMultiplier: 0.91,
+    subsidyNote: 'Strong port and rail connectivity improves the modeled delivered position.',
+  },
+};
+
+function getCountryBaseCost(country: Country): number {
+  const adj = COUNTRY_ADJUSTMENTS[country];
+  // Cost Anatomy weights: HRC 74%, Conversion 4%, Utilities 12% (electricity), Labour 6%, Freight 3%, Overhead 1%
+  // Calibrated so Germany (1.08, 1.12, 0.98) yields exactly 1048:
+  // 1048 / (0.74 + 0.04 + 0.12*1.08 + 0.06*1.12 + 0.03*0.98 + 0.01) = 1048 / 1.0162 = 1031.2929
+  const countryFactor = 0.74 + 0.04 + 0.12 * adj.electricityMultiplier + 0.06 * adj.laborMultiplier + 0.03 * adj.freightMultiplier + 0.01;
+  return Math.round(1031.2929 * countryFactor);
+}
+
 const FALLBACK_OVERVIEW: MarketOverview = {
   country: 'Germany',
   asOf: '2025-02-14T08:30:00.000Z',
@@ -111,10 +171,7 @@ const FALLBACK_OVERVIEW: MarketOverview = {
   totalInputCount: 14,
   adjustment: {
     country: 'Germany',
-    electricityMultiplier: 1.08,
-    laborMultiplier: 1.14,
-    freightMultiplier: 1.02,
-    subsidyNote: 'No active production subsidy applied',
+    ...COUNTRY_ADJUSTMENTS.Germany,
   },
   inputs: [
     fallbackInput('hrc', 'North Europe HRC', 612, '€/t', 'cached', 'EU HRC benchmark · Kallanish / MEPS proxy', 'weekly', '2026-09-01T06:00:00.000Z'),
@@ -134,6 +191,91 @@ const FALLBACK_OVERVIEW: MarketOverview = {
   ],
 };
 
+function getOverviewForCountry(country: Country): MarketOverview {
+  const adj = COUNTRY_ADJUSTMENTS[country];
+  const baseCostPerTon = getCountryBaseCost(country);
+  const inputs = FALLBACK_OVERVIEW.inputs.map((inp) => {
+    if (inp.key === 'electricity') {
+      return { ...inp, value: Number((86 * adj.electricityMultiplier).toFixed(1)) };
+    }
+    if (inp.key === 'labor') {
+      return { ...inp, value: Number((38.4 * adj.laborMultiplier).toFixed(1)) };
+    }
+    if (inp.key === 'freight') {
+      return { ...inp, value: Number((42 * adj.freightMultiplier).toFixed(1)) };
+    }
+    return inp;
+  });
+
+  return {
+    ...FALLBACK_OVERVIEW,
+    country,
+    baseCostPerTon,
+    adjustment: {
+      country,
+      ...adj,
+    },
+    inputs,
+  };
+}
+
+const GERMANY_FORECAST_POINTS = [
+  { week: 0, label: 'Now', costPerTon: 1048, lower: 1026, upper: 1072 },
+  { week: 1, label: 'Wk 09', costPerTon: 1054, lower: 1026, upper: 1084 },
+  { week: 2, label: 'Wk 10', costPerTon: 1061, lower: 1027, upper: 1097 },
+  { week: 3, label: 'Wk 11', costPerTon: 1057, lower: 1018, upper: 1096 },
+  { week: 4, label: 'Wk 12', costPerTon: 1070, lower: 1020, upper: 1120 },
+  { week: 5, label: 'Wk 13', costPerTon: 1082, lower: 1024, upper: 1140 },
+  { week: 6, label: 'Wk 14', costPerTon: 1076, lower: 1013, upper: 1142 },
+  { week: 7, label: 'Wk 15', costPerTon: 1091, lower: 1018, upper: 1164 },
+  { week: 8, label: 'Wk 16', costPerTon: 1102, lower: 1021, upper: 1183 },
+];
+
+function buildFallbackSeries(country: Country): SeriesForecast[] {
+  const adj = COUNTRY_ADJUSTMENTS[country];
+  const specs: Array<{
+    key: string;
+    label: string;
+    unit: string;
+    base: number;
+    model: string;
+    provenanceKind: SeriesForecast['provenanceKind'];
+  }> = [
+    { key: 'hrc', label: 'North Europe HRC', unit: '€/t', base: 612, model: 'Exponential smoothing (ETS)', provenanceKind: 'proxy' },
+    { key: 'electricity', label: 'Industrial electricity', unit: '€/MWh', base: Number((86 * adj.electricityMultiplier).toFixed(1)), model: 'Exponential smoothing (ETS)', provenanceKind: 'official' },
+    { key: 'ttf', label: 'TTF natural gas', unit: '€/MWh', base: 34, model: 'Exponential smoothing (ETS)', provenanceKind: 'proxy' },
+    { key: 'carbon', label: 'EU ETS allowance', unit: '€/tCO₂', base: 84, model: 'Exponential smoothing (ETS)', provenanceKind: 'proxy' },
+  ];
+  return specs.map((spec) => {
+    const history = Array.from({ length: 16 }, (_, i) => {
+      const week = i - 15;
+      const val = Number((spec.base * (1 + Math.sin(i * 0.7) * 0.04 + week * 0.001)).toFixed(2));
+      return { week, label: week === 0 ? 'Now' : `W${week}`, value: val };
+    });
+    const points = Array.from({ length: 27 }, (_, week) => {
+      const val = Number((spec.base * (1 + week * 0.0015 + Math.sin(week * 0.6) * 0.01)).toFixed(2));
+      const band = 0.02 + week * 0.005;
+      return {
+        week,
+        label: week === 0 ? 'Now' : `W${week}`,
+        value: val,
+        lower: Number((val * (1 - band)).toFixed(2)),
+        upper: Number((val * (1 + band)).toFixed(2)),
+      };
+    });
+    return {
+      key: spec.key,
+      label: spec.label,
+      unit: spec.unit,
+      model: spec.model,
+      sourceInputKey: spec.key,
+      provenanceKind: spec.provenanceKind,
+      history,
+      points,
+    };
+  });
+}
+
 const FALLBACK_FORECAST: MarketForecast = {
   country: 'Germany',
   horizon: 8,
@@ -145,7 +287,7 @@ const FALLBACK_FORECAST: MarketForecast = {
     rolling90: { windowDays: 90, windowStart: '2026-06-05T00:00:00.000Z', windowEnd: '2026-09-03T00:00:00.000Z', observationCount: 0, meanAbsolutePercentageError: null, medianAbsolutePercentageError: null, bandCoveragePercent: null, status: 'insufficient' },
     errorBandMethodology: 'Mean and median absolute percentage error are calculated on matured forecast snapshots. Band coverage is the share of those outcomes inside the published lower/upper interval.',
   },
-  series: [],
+  series: buildFallbackSeries('Germany'),
   validation: {
     generatedAt: '2026-09-03T06:00:00.000Z',
     confidenceScore: 78,
@@ -155,18 +297,34 @@ const FALLBACK_FORECAST: MarketForecast = {
     methodology: 'Validation is temporarily unavailable while the market feed reconnects.',
   },
   methodology: 'Weighted EAF cost model with energy pass-through and an expanding uncertainty band.',
-  points: [
-    { week: 0, label: 'Now', costPerTon: 1048, lower: 1026, upper: 1072 },
-    { week: 1, label: 'Wk 09', costPerTon: 1054, lower: 1026, upper: 1084 },
-    { week: 2, label: 'Wk 10', costPerTon: 1061, lower: 1027, upper: 1097 },
-    { week: 3, label: 'Wk 11', costPerTon: 1057, lower: 1018, upper: 1096 },
-    { week: 4, label: 'Wk 12', costPerTon: 1070, lower: 1020, upper: 1120 },
-    { week: 5, label: 'Wk 13', costPerTon: 1082, lower: 1024, upper: 1140 },
-    { week: 6, label: 'Wk 14', costPerTon: 1076, lower: 1013, upper: 1142 },
-    { week: 7, label: 'Wk 15', costPerTon: 1091, lower: 1018, upper: 1164 },
-    { week: 8, label: 'Wk 16', costPerTon: 1102, lower: 1021, upper: 1183 },
-  ],
+  points: GERMANY_FORECAST_POINTS,
 };
+
+function getForecastForCountry(country: Country, horizon: number): MarketForecast {
+  const baseCost = getCountryBaseCost(country);
+  const ratio = baseCost / 1048;
+
+  const targetCount = Math.min(horizon + 1, GERMANY_FORECAST_POINTS.length);
+  const points = GERMANY_FORECAST_POINTS.slice(0, targetCount).map((p) => {
+    const costPerTon = Math.round(p.costPerTon * ratio);
+    const lower = Math.round(p.lower * ratio);
+    const upper = Math.round(p.upper * ratio);
+    return {
+      ...p,
+      costPerTon,
+      lower,
+      upper,
+    };
+  });
+
+  return {
+    ...FALLBACK_FORECAST,
+    country,
+    horizon,
+    points,
+    series: buildFallbackSeries(country),
+  };
+}
 
 const FALLBACK_ASSUMPTIONS: MarketAssumptions = {
   title: 'Model assumptions & source notes',
@@ -528,9 +686,9 @@ function ContributionPanel({ overview, baselineCost, scenarioCost, sessionStarte
   );
 }
 
-function ForecastChart({ forecast, inputs, sessionStartedAt }: { forecast: MarketForecast; inputs: MarketInput[]; sessionStartedAt: number }) {
+function ForecastChart({ forecast, inputs, sessionStartedAt, isRecalculating = false }: { forecast: MarketForecast; inputs: MarketInput[]; sessionStartedAt: number; isRecalculating?: boolean }) {
   const chart = useMemo(() => {
-    const points = forecast.points.length ? forecast.points : FALLBACK_FORECAST.points;
+    const points = forecast.points.length ? forecast.points : GERMANY_FORECAST_POINTS;
     const values = points.flatMap((point) => [point.lower, point.upper]);
     const min = Math.min(...values) - 10;
     const max = Math.max(...values) + 10;
@@ -543,10 +701,21 @@ function ForecastChart({ forecast, inputs, sessionStartedAt }: { forecast: Marke
   }, [forecast]);
   return (
     <section className="panel overflow-hidden">
-       <div className="panel-header flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Directional outlook</div><h2 className="mt-1 font-display text-base font-semibold">Cost forecast with uncertainty</h2></div><div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground"><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-primary" />Expected</span><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-accent/20" />Range</span>{inputs.filter((input) => ['hrc', 'electricity', 'carbon'].includes(input.key)).map((input) => <LiveIndicator key={input.key} input={input} sessionStartedAt={sessionStartedAt} />)}</div></div>
+       <div className="panel-header flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+         <div className="flex flex-wrap items-center gap-3">
+           <div><div className="label-caps text-muted-foreground">Directional outlook</div><h2 className="mt-1 font-display text-base font-semibold">Cost forecast with uncertainty</h2></div>
+           {isRecalculating && (
+             <span data-testid="badge-recalculating" className="flex items-center gap-1.5 rounded-sm bg-primary/10 px-2.5 py-1 font-mono text-[11px] font-medium text-primary animate-pulse">
+               <RefreshCw size={11} className="animate-spin" />
+               Recalculating for {forecast.country}...
+             </span>
+           )}
+         </div>
+         <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground"><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-primary" />Expected</span><span className="flex items-center gap-2"><span className="h-2 w-5 rounded-full bg-accent/20" />Range</span>{inputs.filter((input) => ['hrc', 'electricity', 'carbon'].includes(input.key)).map((input) => <LiveIndicator key={input.key} input={input} sessionStartedAt={sessionStartedAt} />)}</div>
+       </div>
       <div className="p-3 pt-5 sm:p-5">
         <div className="mb-2 flex items-start justify-between"><div><div className="data-mono text-2xl font-semibold">{euro.format(chart.points[0]?.costPerTon ?? 0)}<span className="ml-1 text-xs font-normal text-muted-foreground">/ t today</span></div><div className="mt-1 flex items-center gap-1 text-xs text-destructive"><ArrowUpRight size={13} />{chart.points.length > 1 ? `${euro.format((chart.points.at(-1)?.costPerTon ?? 0) - (chart.points[0]?.costPerTon ?? 0))} by horizon` : 'Awaiting horizon'}</div></div><div className="rounded-sm border border-border bg-secondary/45 px-3 py-2 text-right"><div className="label-caps text-muted-foreground">30-day error</div><div data-testid="text-backtest-score" className="data-mono mt-1 text-sm font-semibold text-accent">{forecast.backtest.rolling30.meanAbsolutePercentageError === null ? 'Awaiting' : `${forecast.backtest.rolling30.meanAbsolutePercentageError.toFixed(1)}%`}</div></div></div>
-        <div className="w-full overflow-hidden">
+        <div className={`w-full overflow-hidden transition-opacity duration-200 ${isRecalculating ? 'opacity-50' : 'opacity-100'}`}>
           <svg data-testid="chart-forecast" className="mt-3 h-auto w-full max-w-full" viewBox="0 0 760 280" role="img" aria-label="Forecast cost chart with uncertainty range">
             <g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1="24" y1="32" x2="736" y2="32" /><line x1="24" y1="98" x2="736" y2="98" /><line x1="24" y1="164" x2="736" y2="164" /><line x1="24" y1="228" x2="736" y2="228" /></g>
             <polygon points={chart.band} fill="hsl(var(--accent) / .13)" />
@@ -775,7 +944,7 @@ function ForecastModelSelector({ model, onChange }: { model: ForecastModel; onCh
   );
 }
 
-function HistoricalPricesPanel({ series, inputs }: { series: SeriesForecast[]; inputs: MarketInput[] }) {
+function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt }: { series: SeriesForecast[]; inputs: MarketInput[]; baseCost: number; refreshedAt: number }) {
   const [activeKey, setActiveKey] = useState<HistoricalFactorKey>('hrc');
   const factor = HISTORICAL_FACTORS.find((item) => item.key === activeKey) ?? HISTORICAL_FACTORS[0];
   const activeSeries = series.find((item) => item.key === activeKey);
@@ -787,6 +956,9 @@ function HistoricalPricesPanel({ series, inputs }: { series: SeriesForecast[]; i
         value: Number(((input?.value ?? 0) * (1 + Math.sin((index + activeKey.length) * 0.72) * 0.06 + (index - 15) * 0.002)).toFixed(2)),
       }));
   const values = history.map((point) => point.value);
+  const latestMove = values.length > 1 ? ((values.at(-1)! - values.at(-2)!) / Math.max(Math.abs(values.at(-2)!), 1)) * 100 : 0;
+  const latestCostImpact = baseCost * FACTOR_COST_SHARES[activeKey] * latestMove / 100;
+  const formatMove = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
   const min = Math.min(...values, 0);
   const max = Math.max(...values, 1);
   const chartPoints = history.map((point, index) => `${18 + (index * 324) / Math.max(history.length - 1, 1)},${116 - ((point.value - min) / Math.max(max - min, 1)) * 88}`).join(' ');
@@ -803,7 +975,7 @@ function HistoricalPricesPanel({ series, inputs }: { series: SeriesForecast[]; i
   return (
     <section data-testid="panel-historical-prices" className="panel overflow-hidden">
       <div className="panel-header flex items-start justify-between gap-3 px-5 py-4">
-        <div><div className="label-caps text-muted-foreground">Historical price context</div><h2 className="mt-1 font-display text-base font-semibold">Prices around market events</h2></div>
+        <div><div className="label-caps text-muted-foreground">Historical price context</div><h2 className="mt-1 font-display text-base font-semibold">Prices around market events</h2><div className="mt-1 text-[10px] text-muted-foreground">Updated {Number.isFinite(refreshedAt) ? formatUpdated(new Date(refreshedAt).toISOString()) : 'pending'} · latest move is calculated from the refreshed series</div></div>
         <button data-testid="button-download-historical-csv" onClick={downloadHistory} className="inline-flex shrink-0 items-center gap-2 rounded-sm border border-border bg-card px-3 py-2 text-[11px] font-bold text-foreground hover:border-primary/50 hover:bg-secondary"><Download size={13} /> Download CSV</button>
       </div>
       <div className="flex gap-1 overflow-x-auto border-b border-border/70 px-5 pt-1">
@@ -815,7 +987,15 @@ function HistoricalPricesPanel({ series, inputs }: { series: SeriesForecast[]; i
           <svg className="mt-4 h-36 w-full" viewBox="0 0 340 142" role="img" aria-label={`${factor.label} historical price chart`}><line x1="18" y1="116" x2="334" y2="116" stroke="hsl(var(--border))" /><polyline points={chartPoints} fill="none" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />{history.map((point, index) => <circle key={`${point.label}-${index}`} cx={18 + (index * 324) / Math.max(history.length - 1, 1)} cy={116 - ((point.value - min) / Math.max(max - min, 1)) * 88} r={index === history.length - 1 ? 4 : 2.5} fill="hsl(var(--card))" stroke="hsl(var(--primary))" strokeWidth="2" />)}</svg>
           <div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>{history[0]?.label}</span><span>Latest</span></div>
         </div>
-        <div className="border-l-0 border-border/70 lg:border-l lg:pl-5"><div className="label-caps text-muted-foreground">Geopolitical context</div><div className="mt-3 space-y-3">{MARKET_EVENTS.map((event) => <div key={event.date} className="border-l-2 border-primary/45 pl-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">{event.name}</span><span className="font-mono text-[10px] text-muted-foreground">{event.date}</span></div><div className="mt-0.5 text-[10px] uppercase tracking-[.06em] text-primary">{event.category}</div><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{event.note}</p></div>)}</div></div>
+        <div className="border-l-0 border-border/70 lg:border-l lg:pl-5">
+          <div className="label-caps text-muted-foreground">Current market signal</div>
+          <div className="mt-2 rounded-sm border border-accent/40 bg-accent/5 p-3">
+            <div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">Latest {factor.label} movement</span><span className={`font-mono text-xs font-semibold ${latestMove >= 0 ? 'text-red-500' : 'text-emerald-600'}`}>{formatMove(latestMove)}</span></div>
+            <p className="mt-1 text-[11px] leading-4 text-muted-foreground">This refresh changes the modeled cost by approximately <span className="font-mono font-semibold text-foreground">{latestCostImpact >= 0 ? '+' : ''}{euro.format(latestCostImpact)}</span> per tonne.</p>
+          </div>
+          <div className="mt-4 label-caps text-muted-foreground">Historical events</div>
+          <div className="mt-3 space-y-3">{MARKET_EVENTS.map((event) => { const move = event.factorMoves[activeKey]; const priceImpact = input && move !== undefined ? input.value * move / 100 : undefined; const costImpact = move === undefined ? undefined : baseCost * FACTOR_COST_SHARES[activeKey] * move / 100; return <div key={event.date} className="border-l-2 border-primary/45 pl-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">{event.name}</span><span className="font-mono text-[10px] text-muted-foreground">{event.date}</span></div><div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] uppercase tracking-[.06em] text-primary"><span>{event.category}</span>{move !== undefined && <span className="font-mono normal-case tracking-normal text-foreground">{formatMove(move)} · {priceImpact! >= 0 ? '+' : ''}{number.format(priceImpact!)} {factor.unit}</span>}</div><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{event.note}{costImpact !== undefined && <span> Estimated model effect: <span className="font-mono text-foreground">{costImpact >= 0 ? '+' : ''}{euro.format(costImpact)}/t.</span></span>}</p></div>; })}</div>
+        </div>
       </div>
       <div className="border-t border-border/70 px-5 py-3 text-[10px] leading-4 text-muted-foreground">Event markers describe movements associated with concurrent market conditions; they do not claim sole causation. Historical values are labeled as cached or estimated when a live source is unavailable.</div>
     </section>
@@ -829,18 +1009,29 @@ function Home() {
   const [scenario, setScenario] = useState<ScenarioValues | null>(null);
   const [exported, setExported] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
   const [sessionStartedAt] = useState(() => Date.now());
+  const [refreshedAt, setRefreshedAt] = useState(() => Date.now());
+
+  const handleCountryChange = (nextCountry: Country) => {
+    if (nextCountry === country) return;
+    setIsRecalculating(true);
+    setCountry(nextCountry);
+    setScenario(null);
+    window.setTimeout(() => {
+      setIsRecalculating(false);
+    }, 350);
+  };
+
   const overviewQuery = useGetMarketOverview({ country }, { query: { queryKey: getGetMarketOverviewQueryKey({ country }), staleTime: 300_000, refetchInterval: 60_000 } });
   const forecastQuery = useGetMarketForecast({ country, horizon }, { query: { queryKey: getGetMarketForecastQueryKey({ country, horizon }), staleTime: 300_000, refetchInterval: 60_000 } });
   const backtestQuery = useGetMarketBacktest({ country }, { query: { queryKey: getGetMarketBacktestQueryKey({ country }), staleTime: 300_000, refetchInterval: 60_000 } });
   const overview = overviewQuery.data?.adjustment
     ? overviewQuery.data
-    : overviewQuery.isLoading
-      ? undefined
-      : { ...FALLBACK_OVERVIEW, country, adjustment: { ...FALLBACK_OVERVIEW.adjustment, country } };
+    : getOverviewForCountry(country);
   const forecast = forecastQuery.data?.points && forecastQuery.data.series && forecastQuery.data.backtest
     ? forecastQuery.data
-    : { ...FALLBACK_FORECAST, country, horizon };
+    : getForecastForCountry(country, horizon);
   const modelForecast = useMemo(() => applyForecastModel(forecast, forecastModel), [forecast, forecastModel]);
   const modelBaseCost = modelForecast.points[0]?.costPerTon ?? overview?.baseCostPerTon ?? 0;
   const backtest = backtestQuery.data?.rolling30 && backtestQuery.data.rolling90
@@ -850,6 +1041,7 @@ function Home() {
     setRefreshing(true);
     try {
       await Promise.all([overviewQuery.refetch(), forecastQuery.refetch(), backtestQuery.refetch()]);
+      setRefreshedAt(Date.now());
     } finally {
       setRefreshing(false);
     }
@@ -936,7 +1128,7 @@ function Home() {
 
       {overview && (
         <div className="mb-6">
-          <HistoricalPricesPanel series={seriesForChart} inputs={overview.inputs} />
+          <HistoricalPricesPanel series={seriesForChart} inputs={overview.inputs} baseCost={modelBaseCost} refreshedAt={refreshedAt} />
         </div>
       )}
 
@@ -945,7 +1137,7 @@ function Home() {
       ) : overview ? (
         <div className="grid gap-5 grid-cols-1 lg:grid-cols-2 xl:grid-cols-[minmax(270px,1.05fr)_minmax(270px,.95fr)_minmax(340px,1.5fr)]">
           <MarketInputPanel overview={overview} sessionStartedAt={sessionStartedAt} />
-          <ScenarioPanel overview={overview} country={country} setCountry={(nextCountry) => { setCountry(nextCountry); setScenario(null); }} onApply={setScenario} />
+          <ScenarioPanel overview={overview} country={country} setCountry={handleCountryChange} onApply={setScenario} />
           <div className="lg:col-span-2 xl:col-span-1">
             <ContributionPanel overview={overview} baselineCost={modelBaseCost} scenarioCost={scenarioCost} sessionStartedAt={sessionStartedAt} />
           </div>
@@ -960,7 +1152,7 @@ function Home() {
       <div className="mt-5 flex flex-col gap-5">
          <div className="panel overflow-hidden">
            <div className="panel-header flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Planning horizon</div><h2 className="mt-1 font-display text-base font-semibold">Look ahead before you commit volume</h2></div><div data-testid="control-horizon" className="flex rounded-sm border border-border bg-secondary/55 p-1">{[4, 12, 26].map((item) => <button data-testid={`button-horizon-${item}`} key={item} onClick={() => setHorizon(item)} className={`rounded-sm px-3 py-1.5 font-mono text-[11px] ${horizon === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{item === 26 ? '6 months' : `${item} weeks`}</button>)}</div></div>
-           {forecastQuery.isError ? <div className="p-5"><EmptyOrError error onRetry={() => forecastQuery.refetch()} /></div> : overview ? <ForecastChart forecast={forecastForChart} inputs={overview.inputs} sessionStartedAt={sessionStartedAt} /> : <div className="p-5"><Skeleton className="h-64 w-full" /></div>}
+           {forecastQuery.isError ? <div className="p-5"><EmptyOrError error onRetry={() => forecastQuery.refetch()} /></div> : overview ? <ForecastChart forecast={forecastForChart} inputs={overview.inputs} sessionStartedAt={sessionStartedAt} isRecalculating={isRecalculating} /> : <div className="p-5"><Skeleton className="h-64 w-full" /></div>}
         </div>
          <SeriesForecastPanel series={seriesForChart} />
         <BacktestEvidence backtest={backtest} />
