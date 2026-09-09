@@ -9,6 +9,8 @@ import {
   GetMarketOverviewResponse,
 } from "@workspace/api-zod";
 import { getLatestCachedObservation, resolveMarketFeeds } from "../lib/market-feeds";
+import { and, asc, eq } from "drizzle-orm";
+import { db, forecastSeriesSnapshotsTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -388,6 +390,42 @@ router.get("/market/backtest", async (req, res) => {
   const params = GetMarketBacktestQueryParams.parse(req.query);
   const { getBacktestSummary } = await import("../jobs/market-refresh");
   res.json(await getBacktestSummary(params.country as Country));
+});
+
+router.get("/market/track-record", async (req, res) => {
+  const country = (req.query.country as Country | undefined) ?? "Germany";
+  const seriesFilter = typeof req.query.series === "string" ? req.query.series : undefined;
+  const rows = await db
+    .select()
+    .from(forecastSeriesSnapshotsTable)
+    .where(and(eq(forecastSeriesSnapshotsTable.country, country), ...(seriesFilter ? [eq(forecastSeriesSnapshotsTable.seriesKey, seriesFilter)] : [])))
+    .orderBy(asc(forecastSeriesSnapshotsTable.targetDate));
+  const labels: Record<string, string> = { hrc: "North Europe HRC", electricity: "Industrial electricity", ttf: "TTF natural gas", carbon: "EU ETS allowance" };
+  const completed = rows.filter((row) => row.actualValue !== null);
+  res.json({
+    generatedAt: new Date().toISOString(),
+    country,
+    rows: rows.map((row) => ({
+      seriesKey: row.seriesKey,
+      series: labels[row.seriesKey] ?? row.seriesKey,
+      unit: row.unit,
+      forecastDate: new Date(row.runAt).toISOString(),
+      targetDate: new Date(row.targetDate).toISOString(),
+      predictedValue: row.predictedValue,
+      lowerBound: row.lowerBound,
+      upperBound: row.upperBound,
+      actualValue: row.actualValue,
+      actualCapturedAt: row.actualCapturedAt ? new Date(row.actualCapturedAt).toISOString() : null,
+      model: row.model,
+      status: row.actualValue === null ? "pending" : "complete",
+      absoluteError: row.absoluteError,
+      percentageError: row.percentageError,
+    })),
+    totalForecasts: rows.length,
+    maturedForecasts: completed.length,
+    seriesCount: new Set(rows.map((row) => row.seriesKey)).size,
+    note: completed.length ? "Only forecasts with genuinely captured market observations are included in completed accuracy summaries." : "Track record builds over time. No completed forecasts yet — check back once forecasted dates have passed.",
+  });
 });
 
 router.get("/market/assumptions", async (req, res) => {

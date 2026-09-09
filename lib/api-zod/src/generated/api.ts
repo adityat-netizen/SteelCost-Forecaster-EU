@@ -246,6 +246,7 @@ export const GetMarketTrackRecordResponse = zod.object({
   "lowerBound": zod.number(),
   "upperBound": zod.number(),
   "actualValue": zod.number().nullable(),
+  "actualCapturedAt": zod.string().nullable(),
   "model": zod.string(),
   "status": zod.enum(['pending', 'complete']),
   "absoluteError": zod.number().nullable(),

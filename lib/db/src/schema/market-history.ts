@@ -76,6 +76,7 @@ export const forecastSeriesSnapshotsTable = pgTable(
     unit: text("unit").notNull(),
     model: text("model").notNull(),
     actualValue: doublePrecision("actual_value"),
+    actualCapturedAt: timestamp("actual_captured_at", { withTimezone: true }),
     absoluteError: doublePrecision("absolute_error"),
     percentageError: doublePrecision("percentage_error"),
     withinBand: boolean("within_band"),

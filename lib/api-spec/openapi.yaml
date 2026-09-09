@@ -476,6 +476,8 @@ components:
           type: number
         actualValue:
           type: ["number", "null"]
+        actualCapturedAt:
+          type: ["string", "null"]
         model:
           type: string
         status:
@@ -485,7 +487,7 @@ components:
           type: ["number", "null"]
         percentageError:
           type: ["number", "null"]
-      required: [seriesKey, series, unit, forecastDate, targetDate, predictedValue, lowerBound, upperBound, actualValue, model, status, absoluteError, percentageError]
+      required: [seriesKey, series, unit, forecastDate, targetDate, predictedValue, lowerBound, upperBound, actualValue, actualCapturedAt, model, status, absoluteError, percentageError]
     MarketTrackRecord:
       type: object
       properties:

@@ -2,6 +2,7 @@ import { and, asc, eq, gte, isNull, isNotNull, lte } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   forecastSnapshotsTable,
+  forecastSeriesSnapshotsTable,
   marketObservationsTable,
   type ForecastSnapshot,
 } from "@workspace/db";
@@ -11,6 +12,7 @@ import {
   buildInputs,
   createForecastPoints,
   getBaseCost,
+  buildSeriesForecasts,
   type Country,
 } from "../routes/market";
 
@@ -129,6 +131,41 @@ async function resolveMaturedSnapshots(now: Date) {
   return resolved;
 }
 
+async function resolveMaturedSeriesSnapshots(now: Date) {
+  const pending = await db
+    .select()
+    .from(forecastSeriesSnapshotsTable)
+    .where(
+      and(
+        isNull(forecastSeriesSnapshotsTable.actualValue),
+        lte(forecastSeriesSnapshotsTable.targetDate, now),
+      ),
+    )
+    .orderBy(asc(forecastSeriesSnapshotsTable.targetDate));
+  if (!pending.length) return 0;
+
+  const observations = await db.select().from(marketObservationsTable);
+  let resolved = 0;
+  for (const snapshot of pending) {
+    const targetTime = asDate(snapshot.targetDate).getTime();
+    const matching = observations
+      .filter((observation) => observation.inputKey === snapshot.seriesKey && asDate(observation.observedAt).getTime() <= targetTime)
+      .sort((a, b) => asDate(b.observedAt).getTime() - asDate(a.observedAt).getTime())[0];
+    if (!matching) continue;
+    const absoluteError = Math.abs(matching.value - snapshot.predictedValue);
+    const percentageError = matching.value ? (absoluteError / Math.abs(matching.value)) * 100 : null;
+    await db.update(forecastSeriesSnapshotsTable).set({
+      actualValue: matching.value,
+      actualCapturedAt: now,
+      absoluteError,
+      percentageError,
+      withinBand: matching.value >= snapshot.lowerBound && matching.value <= snapshot.upperBound,
+    }).where(eq(forecastSeriesSnapshotsTable.id, snapshot.id));
+    resolved += 1;
+  }
+  return resolved;
+}
+
 async function storeRefresh(now: Date) {
   const inputs = await buildInputs(logger);
   const runAt = now;
@@ -164,6 +201,7 @@ async function storeRefresh(now: Date) {
     for (const country of COUNTRIES) {
       const base = getBaseCost(inputs, country);
       const points = createForecastPoints(base, 26, inputs, country);
+      const series = buildSeriesForecasts(inputs, 26);
       for (const point of points.filter((forecastPoint) => forecastPoint.week > 0)) {
         const targetDate = new Date(runAt);
         targetDate.setUTCDate(targetDate.getUTCDate() + point.week * 7);
@@ -186,10 +224,39 @@ async function storeRefresh(now: Date) {
             ],
           });
       }
+      for (const seriesItem of series) {
+        for (const point of seriesItem.points.filter((forecastPoint) => forecastPoint.week > 0)) {
+          const targetDate = new Date(runAt);
+          targetDate.setUTCDate(targetDate.getUTCDate() + point.week * 7);
+          await tx.insert(forecastSeriesSnapshotsTable).values({
+            country,
+            seriesKey: seriesItem.sourceInputKey,
+            runAt,
+            targetDate,
+            horizonWeeks: point.week,
+            predictedValue: point.value,
+            lowerBound: point.lower,
+            upperBound: point.upper,
+            unit: seriesItem.unit,
+            model: seriesItem.model,
+          }).onConflictDoNothing({
+            target: [
+              forecastSeriesSnapshotsTable.country,
+              forecastSeriesSnapshotsTable.seriesKey,
+              forecastSeriesSnapshotsTable.runAt,
+              forecastSeriesSnapshotsTable.targetDate,
+            ],
+          });
+        }
+      }
     }
   });
 
-  return resolveMaturedSnapshots(now);
+  const [resolvedCost, resolvedSeries] = await Promise.all([
+    resolveMaturedSnapshots(now),
+    resolveMaturedSeriesSnapshots(now),
+  ]);
+  return resolvedCost + resolvedSeries;
 }
 
 export async function refreshMarketHistory() {

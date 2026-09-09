@@ -18,6 +18,8 @@ export interface TrackRecordRow {
   upperBound: number;
   /** @nullable */
   actualValue: number | null;
+  /** @nullable */
+  actualCapturedAt: string | null;
   model: string;
   status: TrackRecordRowStatus;
   /** @nullable */

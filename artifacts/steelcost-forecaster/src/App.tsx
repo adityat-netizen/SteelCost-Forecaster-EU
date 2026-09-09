@@ -31,6 +31,7 @@ import {
   getGetMarketForecastQueryKey,
   getGetMarketOverviewQueryKey,
   getGetMarketValidationQueryKey,
+  getGetMarketTrackRecordQueryKey,
   getHealthCheckQueryKey,
   type MarketAssumptions,
   type MarketBacktest,
@@ -38,12 +39,14 @@ import {
   type MarketInput,
   type MarketOverview,
   type MarketValidation,
+  type MarketTrackRecord,
   type SeriesForecast,
   useGetMarketAssumptions,
   useGetMarketBacktest,
   useGetMarketForecast,
   useGetMarketOverview,
   useGetMarketValidation,
+  useGetMarketTrackRecord,
   useHealthCheck,
 } from '@workspace/api-client-react';
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
@@ -921,14 +924,34 @@ function ProsConsPanel() {
   );
 }
 
-function ConfidenceCard({ overview, validation }: { overview: MarketOverview; validation?: MarketValidation }) {
+function ConfidenceCard({ overview, validation, trackRecord }: { overview: MarketOverview; validation?: MarketValidation; trackRecord?: MarketTrackRecord }) {
   const circumference = 2 * Math.PI * 29;
   return (
     <div className="panel flex min-h-[128px] items-center gap-4 p-5">
       <div className="relative h-[72px] w-[72px] shrink-0"><svg viewBox="0 0 72 72" className="-rotate-90"><circle cx="36" cy="36" r="29" fill="none" stroke="hsl(var(--secondary))" strokeWidth="7" /><circle data-testid="progress-confidence" cx="36" cy="36" r="29" fill="none" stroke="hsl(var(--accent))" strokeWidth="7" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - overview.confidenceScore / 100)} /></svg><span className="absolute inset-0 flex items-center justify-center data-mono text-sm font-semibold">{overview.confidenceScore}</span></div>
-       <div title={validation ? `Derived from ${validation.rows.length}/4 ETS validations, ${validation.freshnessCoverage}% freshness coverage, and ${validation.liveSeriesCount}/4 live series.` : 'Derived from model validation and source freshness.'}><div className="label-caps text-muted-foreground">Signal confidence</div><div data-testid="text-confidence-label" className="mt-1 text-sm font-semibold">{overview.confidenceScore >= 80 ? 'High confidence' : 'Use with care'}</div><p className="mt-1 text-[11px] leading-4 text-muted-foreground">Derived from held-out model error,<br />source coverage, and live series.</p></div>
+       <div title={validation ? `Derived from ${validation.rows.length}/4 ETS validations, ${validation.freshnessCoverage}% freshness coverage, and ${validation.liveSeriesCount}/4 live series.` : 'Derived from model validation and source freshness.'}><div className="label-caps text-muted-foreground">Signal confidence</div><div data-testid="text-confidence-label" className="mt-1 text-sm font-semibold">{overview.confidenceScore >= 80 ? 'High confidence' : 'Use with care'}</div><p className="mt-1 text-[11px] leading-4 text-muted-foreground">Derived from held-out model error,<br />source coverage, and live series.</p><TrackRecordSummary trackRecord={trackRecord} /></div>
     </div>
   );
+}
+
+function TrackRecordSummary({ trackRecord }: { trackRecord?: MarketTrackRecord }) {
+  const completed = trackRecord?.rows.filter((row) => row.actualValue !== null && row.percentageError !== null) ?? [];
+  const average = completed.length ? completed.reduce((sum, row) => sum + (row.percentageError ?? 0), 0) / completed.length : null;
+  return <div data-testid="track-record-summary" className="mt-3 border-t border-border/70 pt-3 text-[10px] leading-4 text-muted-foreground"><span className="font-semibold text-foreground">Track record: </span>{completed.length ? `${completed.length} forecasts completed, avg error ${average!.toFixed(1)}%` : 'Track record builds over time. No completed forecasts yet — check back once forecasted dates have passed.'}</div>;
+}
+
+function ForecastTrackRecord({ trackRecord }: { trackRecord?: MarketTrackRecord }) {
+  const completed = trackRecord?.rows.filter((row) => row.actualValue !== null) ?? [];
+  const seriesKeys = [...new Set(completed.map((row) => row.seriesKey))];
+  const average = completed.length ? completed.reduce((sum, row) => sum + (row.percentageError ?? 0), 0) / completed.length : null;
+  return <section data-testid="panel-track-record" className="panel overflow-hidden">
+    <div className="panel-header px-5 py-4"><div className="label-caps text-muted-foreground">Live model evidence</div><h2 className="mt-1 font-display text-base font-semibold">Forecast Track Record</h2></div>
+    {!completed.length ? <div className="p-5 text-sm leading-6 text-muted-foreground">Track record builds over time. No completed forecasts yet — check back once forecasted dates have passed.</div> : <div className="p-5">
+      <div className="mb-5 grid gap-3 sm:grid-cols-3"><div className="rounded-sm bg-secondary/45 p-3"><div className="label-caps text-muted-foreground">Completed forecasts</div><div className="data-mono mt-1 text-xl font-semibold">{completed.length}</div></div><div className="rounded-sm bg-secondary/45 p-3"><div className="label-caps text-muted-foreground">Average error</div><div className="data-mono mt-1 text-xl font-semibold">{average!.toFixed(1)}%</div></div><div className="rounded-sm bg-secondary/45 p-3"><div className="label-caps text-muted-foreground">Series tracked</div><div className="data-mono mt-1 text-xl font-semibold">{seriesKeys.length}</div></div></div>
+      {completed.length < 4 && <p className="mb-4 text-[11px] text-muted-foreground">Based on {completed.length} completed forecast{completed.length === 1 ? '' : 's'} — more data needed for a reliable trend.</p>}
+      <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead className="border-b border-border text-[10px] uppercase tracking-[.08em] text-muted-foreground"><tr><th className="px-3 py-2">Series</th><th className="px-3 py-2">Target date</th><th className="px-3 py-2">Forecast</th><th className="px-3 py-2">Actual</th><th className="px-3 py-2">Difference</th><th className="px-3 py-2">% error</th><th className="px-3 py-2">Model</th><th className="px-3 py-2">Captured</th></tr></thead><tbody className="divide-y divide-border/70">{completed.slice(-40).map((row) => <tr key={`${row.seriesKey}-${row.forecastDate}-${row.targetDate}`}><td className="px-3 py-2 font-medium">{row.series}</td><td className="px-3 py-2 font-mono">{formatDate(row.targetDate)}</td><td className="px-3 py-2 font-mono">{number.format(row.predictedValue)} {row.unit}</td><td className="px-3 py-2 font-mono">{number.format(row.actualValue!)} {row.unit}</td><td className="px-3 py-2 font-mono">{number.format(row.actualValue! - row.predictedValue)} {row.unit}</td><td className="px-3 py-2 font-mono">{row.percentageError?.toFixed(1)}%</td><td className="px-3 py-2">{row.model}</td><td className="px-3 py-2 font-mono">{row.actualCapturedAt ? formatDate(row.actualCapturedAt) : '—'}</td></tr>)}</tbody></table></div>
+    </div>}
+  </section>;
 }
 
 function ForecastModelSelector({ model, onChange }: { model: ForecastModel; onChange: (model: ForecastModel) => void }) {
@@ -1069,6 +1092,7 @@ function Home() {
   };
 
   const overviewQuery = useGetMarketOverview({ country }, { query: { queryKey: getGetMarketOverviewQueryKey({ country }), staleTime: 300_000, refetchInterval: 60_000 } });
+  const trackRecordQuery = useGetMarketTrackRecord({ country }, { query: { queryKey: getGetMarketTrackRecordQueryKey({ country }), staleTime: 300_000, refetchInterval: 60_000 } });
   const forecastQuery = useGetMarketForecast({ country, horizon }, { query: { queryKey: getGetMarketForecastQueryKey({ country, horizon }), staleTime: 300_000, refetchInterval: 60_000 } });
   const backtestQuery = useGetMarketBacktest({ country }, { query: { queryKey: getGetMarketBacktestQueryKey({ country }), staleTime: 300_000, refetchInterval: 60_000 } });
   const overview = overviewQuery.data?.adjustment
@@ -1137,7 +1161,7 @@ function Home() {
         </div>
 
         {overview ? (
-          <ConfidenceCard overview={overview} validation={forecast.validation} />
+          <ConfidenceCard overview={overview} validation={forecast.validation} trackRecord={trackRecordQuery.data} />
         ) : (
           <div className="panel flex min-h-[128px] flex-col justify-center p-5"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-32" /></div>
         )}
@@ -1191,6 +1215,7 @@ function Home() {
            {forecastQuery.isError ? <div className="p-5"><EmptyOrError error onRetry={() => forecastQuery.refetch()} /></div> : overview ? <ForecastChart forecast={forecastForChart} inputs={overview.inputs} sessionStartedAt={sessionStartedAt} isRecalculating={isRecalculating} /> : <div className="p-5"><Skeleton className="h-64 w-full" /></div>}
         </div>
          <SeriesForecastPanel series={seriesForChart} />
+        <ForecastTrackRecord trackRecord={trackRecordQuery.data} />
         <BacktestEvidence backtest={backtest} />
          {overview && <><DecisionPanel overview={overview} /><ProsConsPanel /></>}
       </div>
@@ -1202,6 +1227,7 @@ function AssumptionsPage() {
   const assumptionsQuery = useGetMarketAssumptions({ query: { queryKey: getGetMarketAssumptionsQueryKey(), staleTime: 900_000 } });
   const parameterOverviewQuery = useGetMarketOverview({ country: 'Germany' }, { query: { queryKey: getGetMarketOverviewQueryKey({ country: 'Germany' }), staleTime: 300_000 } });
   const validationQuery = useGetMarketValidation({ country: 'Germany' }, { query: { queryKey: getGetMarketValidationQueryKey({ country: 'Germany' }), staleTime: 300_000 } });
+  const trackRecordQuery = useGetMarketTrackRecord({ country: 'Germany' }, { query: { queryKey: getGetMarketTrackRecordQueryKey({ country: 'Germany' }), staleTime: 300_000, refetchInterval: 60_000 } });
   const assumptions = assumptionsQuery.data ?? (assumptionsQuery.isLoading ? undefined : FALLBACK_ASSUMPTIONS);
   const parameterOverview = parameterOverviewQuery.data ?? FALLBACK_OVERVIEW;
   const validation = validationQuery.data ?? FALLBACK_FORECAST.validation;
@@ -1216,6 +1242,7 @@ function AssumptionsPage() {
           <div className="divide-y divide-border/70">{assumptions.items.map((item, index) => <div data-testid={`row-assumption-${index}`} key={item.label} className="grid gap-3 px-5 py-5 md:grid-cols-[220px_1fr_145px] md:items-start"><div className="flex items-start gap-3"><span className="data-mono flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-secondary text-[10px] text-muted-foreground">{String(index + 1).padStart(2, '0')}</span><div className="text-sm font-semibold">{item.label}</div></div><div className="text-sm leading-6 text-muted-foreground">{item.detail}</div><div className="flex items-center justify-between gap-3 md:block md:text-right"><FreshnessPill freshness={item.status} /><div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground md:justify-end"><RefreshCw size={10} />{item.refresh}</div></div></div>)}</div>
         </section>
          <ModelValidationTable validation={validation} />
+        <ForecastTrackRecord trackRecord={trackRecordQuery.data} />
         <div className="grid gap-5 lg:grid-cols-[1.2fr_.8fr]">
            <section className="panel p-5 sm:p-6"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-sm bg-primary/12 text-primary"><SlidersHorizontal size={17} /></div><div><div className="label-caps text-muted-foreground">How the number is built</div><h2 className="mt-1 font-display text-base font-semibold">Formula notes</h2></div></div><div className="mt-6 rounded-sm border border-border bg-secondary/45 p-4 font-mono text-xs leading-7 text-foreground"><span className="text-accent">delivered cost</span> = <span className="text-primary">HRC</span> + <span className="text-primary">conversion inputs</span> + <span className="text-primary">utilities</span><br /><span className="pl-[5.6rem]">+ labour + freight + overhead + margin</span><br /><span className="pl-[5.6rem]">carbon = emissions × (1 − free allocation) × EUA</span></div><div className="mt-5 grid gap-4 text-sm leading-6 text-muted-foreground sm:grid-cols-2"><p><span className="font-semibold text-foreground">Baseline.</span> A pure cold-rolling route starts with North Europe HRC as the dominant input. Iron ore and met coal stay embedded in that purchased coil.</p><p><span className="font-semibold text-foreground">Uncertainty.</span> The band expands with time and input volatility. It is a confidence range, not a guaranteed high/low.</p></div></section>
            <section className="panel bg-foreground p-5 text-background sm:p-6"><div className="flex items-center justify-between"><div className="label-caps text-background/50">Source freshness</div><Activity size={16} className="text-primary" /></div><div className="mt-7 flex items-end gap-2"><div data-testid="text-live-source-count" className="data-mono text-5xl font-semibold tracking-[-.08em]">{String(liveSignalCount).padStart(2, '0')}</div><div className="mb-1 font-mono text-xs text-background/55">live signals</div></div><div className="mt-5 h-2 overflow-hidden rounded-full bg-background/15"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${sourceCoverage}%` }} /></div><div className="mt-3 flex justify-between text-[11px] text-background/55"><span>Source coverage</span><span className="font-mono text-background/80">{sourceCoverage}%</span></div><div className="mt-7 flex gap-2 border-t border-background/15 pt-4 text-[11px] leading-5 text-background/55"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-primary" /> Every input is labelled by freshness so stale data never hides in the baseline.</div></section>
