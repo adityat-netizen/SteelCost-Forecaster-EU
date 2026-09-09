@@ -347,6 +347,17 @@ const FALLBACK_ASSUMPTIONS: MarketAssumptions = {
 const euro = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat('en-IE', { maximumFractionDigits: 1 });
 
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = `\uFEFF${rows.map((row) => row.join(',')).join('\n')}`;
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 function seriesShift(key: string, scenario?: ScenarioValues | null) {
   if (!scenario) return 0;
   if (key === 'hrc') return scenario.hrcShift;
@@ -986,14 +997,8 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
     return { event, index: nearestIndex, inRange: eventTime >= parsePointDate(history[0].label).getTime() && eventTime <= parsePointDate(history.at(-1)?.label ?? 'Now').getTime(), distance: Math.abs(nearestTime - eventTime) };
   }).filter((item) => item.inRange);
   const downloadHistory = () => {
-    const rows = [['Factor', 'Period', 'Historical value', 'Unit'], ...history.map((point) => [factor.label, point.label, String(point.value), factor.unit])];
-    const blob = new Blob([rows.map((row) => row.join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `steelcost-${activeKey}-historical-prices.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    const rows = [['Factor', 'Period', 'Historical value', 'Unit'], ...fullHistory.map((point) => [factor.label, point.label, String(point.value), factor.unit.replaceAll('€', 'EUR')])];
+    downloadCsv(`steelcost-${activeKey}-historical-prices.csv`, rows);
   };
   return (
     <section data-testid="panel-historical-prices" className="panel overflow-hidden">
@@ -1095,10 +1100,7 @@ function Home() {
   const seriesForChart = useMemo(() => applySeriesScenario(modelForecast.series, scenario), [modelForecast.series, scenario]);
   const exportForecast = () => {
     const rows = [['Country', 'Week', 'Expected cost (EUR/t)', 'Lower range', 'Upper range'], ...forecastForChart.points.map((point) => [country, point.label, String(point.costPerTon), String(point.lower), String(point.upper)])];
-    const blob = new Blob([rows.map((row) => row.join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url; anchor.download = `steelcost-${country.toLowerCase()}-${horizon}w.csv`; anchor.click(); URL.revokeObjectURL(url);
+    downloadCsv(`steelcost-${country.toLowerCase()}-${horizon}w.csv`, rows);
     setExported(true); window.setTimeout(() => setExported(false), 2400);
   };
   const exportSeries = () => {
@@ -1110,13 +1112,7 @@ function Home() {
         String(point.upper),
         series.model,
       ])];
-      const blob = new Blob([rows.map((row) => row.join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `steelcost-${country.toLowerCase()}-${series.key}-${horizon}w.csv`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      downloadCsv(`steelcost-${country.toLowerCase()}-${series.key}-${horizon}w.csv`, rows);
     });
   };
   const exportPdf = () => window.print();
