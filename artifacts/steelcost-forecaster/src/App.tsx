@@ -960,14 +960,31 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
         value: Number(((input?.value ?? 0) * (1 + Math.sin((index + activeKey.length) * 0.72) * 0.06 + (index - 15) * 0.002)).toFixed(2)),
       }));
   const rangeLength: Record<HistoricalRange, number> = { '1y': 52, '3y': 156, '5y': 260, full: fullHistory.length };
-  const history = fullHistory.slice(-rangeLength[range]);
+  const visibleHistory = fullHistory.slice(-rangeLength[range]);
+  const displayHistory = range === '1y'
+    ? visibleHistory
+    : Array.from({ length: Math.ceil(visibleHistory.length / 4) }, (_, groupIndex) => {
+        const group = visibleHistory.slice(groupIndex * 4, groupIndex * 4 + 4);
+        return { label: group[0].label, value: Number((group.reduce((sum, point) => sum + point.value, 0) / group.length).toFixed(2)) };
+      });
+  const history = displayHistory;
   const values = history.map((point) => point.value);
   const latestMove = values.length > 1 ? ((values.at(-1)! - values.at(-2)!) / Math.max(Math.abs(values.at(-2)!), 1)) * 100 : 0;
   const latestCostImpact = baseCost * FACTOR_COST_SHARES[activeKey] * latestMove / 100;
   const formatMove = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
   const min = Math.min(...values, 0);
   const max = Math.max(...values, 1);
-  const chartPoints = history.map((point, index) => `${18 + (index * 324) / Math.max(history.length - 1, 1)},${116 - ((point.value - min) / Math.max(max - min, 1)) * 88}`).join(' ');
+  const chartX = (index: number) => 18 + (index * 316) / Math.max(history.length - 1, 1);
+  const chartY = (value: number) => 116 - ((value - min) / Math.max(max - min, 1)) * 88;
+  const chartPoints = history.map((point, index) => `${chartX(index)},${chartY(point.value)}`).join(' ');
+  const xLabelIndexes = Array.from({ length: Math.min(6, history.length) }, (_, index) => Math.round(index * (history.length - 1) / Math.max(Math.min(6, history.length) - 1, 1)));
+  const parsePointDate = (label: string) => label === 'Now' ? new Date() : new Date(`${label}T00:00:00Z`);
+  const eventMarkers = MARKET_EVENTS.map((event) => {
+    const eventTime = new Date(`${event.date}-15T00:00:00Z`).getTime();
+    const nearestIndex = history.reduce((best, point, index) => Math.abs(parsePointDate(point.label).getTime() - eventTime) < Math.abs(parsePointDate(history[best].label).getTime() - eventTime) ? index : best, 0);
+    const nearestTime = parsePointDate(history[nearestIndex].label).getTime();
+    return { event, index: nearestIndex, inRange: eventTime >= parsePointDate(history[0].label).getTime() && eventTime <= parsePointDate(history.at(-1)?.label ?? 'Now').getTime(), distance: Math.abs(nearestTime - eventTime) };
+  }).filter((item) => item.inRange);
   const downloadHistory = () => {
     const rows = [['Factor', 'Period', 'Historical value', 'Unit'], ...history.map((point) => [factor.label, point.label, String(point.value), factor.unit])];
     const blob = new Blob([rows.map((row) => row.join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -990,7 +1007,20 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
       <div className="grid gap-5 p-5 lg:grid-cols-[1.25fr_.75fr]">
         <div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><div className="label-caps text-muted-foreground">{factor.label}</div><div className="data-mono mt-1 text-xl font-semibold">{number.format(values.at(-1) ?? 0)} <span className="text-xs font-normal text-muted-foreground">{factor.unit}</span></div></div><div className="flex rounded-sm border border-border bg-secondary/55 p-1">{([['1y', '1 year'], ['3y', '3 years'], ['5y', '5 years'], ['full', 'Full history']] as const).map(([key, label]) => <button data-testid={`button-history-range-${key}`} key={key} onClick={() => setRange(key)} className={`rounded-sm px-2 py-1.5 text-[10px] font-semibold ${range === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{label}</button>)}</div></div>
-          <svg className="mt-4 h-36 w-full" viewBox="0 0 340 142" role="img" aria-label={`${factor.label} historical price chart`}><line x1="18" y1="116" x2="334" y2="116" stroke="hsl(var(--border))" /><polyline points={chartPoints} fill="none" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />{history.map((point, index) => <circle key={`${point.label}-${index}`} cx={18 + (index * 324) / Math.max(history.length - 1, 1)} cy={116 - ((point.value - min) / Math.max(max - min, 1)) * 88} r={index === history.length - 1 ? 4 : 2.5} fill="hsl(var(--card))" stroke="hsl(var(--primary))" strokeWidth="2" />)}</svg>
+          <svg className="mt-4 h-36 w-full" viewBox="0 0 340 142" role="img" aria-label={`${factor.label} historical price chart`}>
+            <line x1="18" y1="116" x2="334" y2="116" stroke="hsl(var(--border))" />
+            <polyline points={chartPoints} fill="none" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            {range === '1y' && history.map((point, index) => <circle key={`${point.label}-${index}`} cx={chartX(index)} cy={chartY(point.value)} r={index === history.length - 1 ? 4 : 2.5} fill="hsl(var(--card))" stroke="hsl(var(--primary))" strokeWidth="2"><title>{`${point.label}: ${number.format(point.value)} ${factor.unit}`}</title></circle>)}
+            {range !== '1y' && history.map((point, index) => <circle key={`${point.label}-${index}`} cx={chartX(index)} cy={chartY(point.value)} r="6" fill="transparent" stroke="none"><title>{`${point.label}: ${number.format(point.value)} ${factor.unit}`}</title></circle>)}
+            {eventMarkers.map(({ event, index }) => {
+              const move = event.factorMoves[activeKey];
+              return <g key={`marker-${event.date}`} data-testid={`event-marker-${event.date}`}>
+                <line x1={chartX(index)} y1="18" x2={chartX(index)} y2="116" stroke="hsl(var(--muted-foreground) / .5)" strokeDasharray="3 3" />
+                <circle cx={chartX(index)} cy={chartY(history[index].value)} r="3.5" fill="hsl(var(--card))" stroke="hsl(var(--muted-foreground))" strokeWidth="1.5"><title>{`${event.name} · ${event.date} · ${event.category} · ${move >= 0 ? '+' : ''}${move.toFixed(1)}% · ${number.format((input?.value ?? 0) * move / 100)} ${factor.unit}`}</title></circle>
+              </g>;
+            })}
+            {xLabelIndexes.map((index) => <text key={`x-label-${index}`} x={chartX(index)} y="138" textAnchor={index === 0 ? 'start' : index === history.length - 1 ? 'end' : 'middle'} fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="8">{history[index]?.label}</text>)}
+          </svg>
           <div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>{history[0]?.label}</span><span>Latest</span></div>
         </div>
         <div className="border-l-0 border-border/70 lg:border-l lg:pl-5">
