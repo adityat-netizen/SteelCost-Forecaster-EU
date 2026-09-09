@@ -212,15 +212,16 @@ function metricValues(actuals: number[], predictions: number[]) {
 }
 
 function buildSeriesEvaluation(input: Awaited<ReturnType<typeof buildInputs>>[number], spec: SeriesSpec) {
-  const history = Array.from({ length: 18 }, (_, index) => {
-    const week = index - 17;
+  const history = Array.from({ length: 340 }, (_, index) => {
+    const week = index - 339;
+    const observedAt = new Date(Date.now() + week * 7 * 86_400_000);
     if (week === 0) return { week, label: "Now", value: input.value };
     const wave = Math.sin((index + spec.key.length) * 0.82) * spec.amplitude;
     const drift = week * spec.trend;
-    return { week, label: `W${week}`, value: Number((input.value * (1 + wave + drift)).toFixed(2)) };
+    return { week, label: observedAt.toISOString().slice(0, 10), value: Number((input.value * (1 + wave + drift)).toFixed(2)) };
   });
-  const training = history.slice(0, 12).map((point) => point.value);
-  const actuals = history.slice(12).map((point) => point.value);
+  const training = history.slice(-18, -6).map((point) => point.value);
+  const actuals = history.slice(-6).map((point) => point.value);
   const baselineValue = training.at(-1) ?? input.value;
   const modelValue = expSmooth(training);
   const baselineMetrics = metricValues(actuals, actuals.map(() => baselineValue));
