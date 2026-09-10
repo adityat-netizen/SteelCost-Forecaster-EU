@@ -1138,7 +1138,7 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
       <div className="grid gap-5 p-5 lg:grid-cols-[1.25fr_.75fr]">
         <div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><div className="label-caps text-muted-foreground">{factor.label}</div><div className="data-mono mt-1 text-xl font-semibold">{number.format(latestValue)} <span className="text-xs font-normal text-muted-foreground">{factor.unit}</span></div></div><div className="flex rounded-sm border border-border bg-secondary/55 p-1">{([['1y', '1 year'], ['3y', '3 years'], ['5y', '5 years'], ['full', 'Full history']] as const).map(([key, label]) => <button data-testid={`button-history-range-${key}`} key={key} onClick={() => setRange(key)} className={`rounded-sm px-2 py-1.5 text-[10px] font-semibold ${range === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{label}</button>)}</div></div>
-          <svg className="mt-4 h-36 w-full" viewBox="0 0 340 142" role="img" aria-label={`${factor.label} historical price chart`}>
+          <svg className="mt-4 h-40 w-full" viewBox="0 0 340 158" role="img" aria-label={`${factor.label} historical price chart`}>
             <line x1="18" y1="18" x2="18" y2="116" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
             <line x1="18" y1="116" x2="334" y2="116" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
             {[18, 67, 116].map((yPosition, index) => {
@@ -1159,6 +1159,8 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
               </g>;
             })}
             {xLabelIndexes.map((index) => <text key={`x-label-${index}`} x={chartX(index)} y="138" textAnchor={index === 0 ? 'start' : index === history.length - 1 ? 'end' : 'middle'} fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="8">{formatAxisLabel(history[index]?.label ?? '')}</text>)}
+            <text x="176" y="155" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600">DATE</text>
+            <text x="4" y="18" textAnchor="start" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600" transform="rotate(-90 4 18)">VALUE</text>
           </svg>
           <div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>{history[0]?.label}</span><span>Latest</span></div>
         </div>
