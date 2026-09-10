@@ -91,6 +91,10 @@ const PRESET_SHIFTS: Record<ScenarioPreset, Pick<ScenarioValues, 'hrcShift' | 'e
   severe: { hrcShift: 20, electricityShift: 30, gasShift: 30, euaShift: 40 },
 };
 
+function calculateScenarioCost(baseCost: number, scenario: ScenarioValues) {
+  return Math.round(baseCost * (1 + (0.74 * scenario.hrcShift + 0.08 * scenario.electricityShift + 0.04 * scenario.gasShift + 0.02 * scenario.euaShift) / 100) + (scenario.energy - 86.4) * 1.2 + (scenario.laborShare - 7) * baseCost * 0.01 + (scenario.freight - 42) * 0.5 + (85 - scenario.freeAllocation) * 0.45);
+}
+
 function fallbackInput(
   key: string,
   label: string,
@@ -1078,7 +1082,7 @@ function ForecastModelSelector({ model, onChange }: { model: ForecastModel; onCh
 function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyScenario }: { series: SeriesForecast[]; inputs: MarketInput[]; baseCost: number; refreshedAt: number; onApplyScenario: (values: ScenarioValues, eventName: string) => void }) {
   const [activeKey, setActiveKey] = useState<HistoricalFactorKey>('hrc');
   const [range, setRange] = useState<HistoricalRange>('full');
-  const [appliedEvent, setAppliedEvent] = useState<string | null>(null);
+  const [appliedEvent, setAppliedEvent] = useState<{ event: typeof MARKET_EVENTS[number]; values: ScenarioValues } | null>(null);
   const factor = HISTORICAL_FACTORS.find((item) => item.key === activeKey) ?? HISTORICAL_FACTORS[0];
   const activeSeries = series.find((item) => item.key === activeKey);
   const input = inputs.find((item) => item.key === activeKey);
@@ -1135,8 +1139,8 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
       <div className="flex gap-1 overflow-x-auto border-b border-border/70 px-5 pt-1">
         {HISTORICAL_FACTORS.map((item) => <button data-testid={`tab-historical-${item.key}`} key={item.key} onClick={() => setActiveKey(item.key)} className={`shrink-0 border-b-2 px-3 py-2.5 text-[11px] font-semibold ${activeKey === item.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>{item.label}</button>)}
       </div>
-      <div className="grid gap-5 p-5 lg:grid-cols-[1.25fr_.75fr]">
-        <div>
+      <div className="grid items-start gap-5 p-5 lg:grid-cols-[1.25fr_.75fr]">
+        <div className="self-start">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><div className="label-caps text-muted-foreground">{factor.label}</div><div className="data-mono mt-1 text-xl font-semibold">{number.format(latestValue)} <span className="text-xs font-normal text-muted-foreground">{factor.unit}</span></div></div><div className="flex rounded-sm border border-border bg-secondary/55 p-1">{([['1y', '1 year'], ['3y', '3 years'], ['5y', '5 years'], ['full', 'Full history']] as const).map(([key, label]) => <button data-testid={`button-history-range-${key}`} key={key} onClick={() => setRange(key)} className={`rounded-sm px-2 py-1.5 text-[10px] font-semibold ${range === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{label}</button>)}</div></div>
           <svg className="mt-4 h-40 w-full" viewBox="0 0 340 158" role="img" aria-label={`${factor.label} historical price chart`}>
             <line x1="18" y1="18" x2="18" y2="116" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
@@ -1169,10 +1173,29 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
           <div className="mt-2 rounded-sm border border-accent/40 bg-accent/5 p-3">
             <div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">Latest {factor.label} movement</span><span className={`font-mono text-xs font-semibold ${latestMove >= 0 ? 'text-red-500' : 'text-emerald-600'}`}>{formatMove(latestMove)}</span></div>
             <p className="mt-1 text-[11px] leading-4 text-muted-foreground">This refresh changes the modeled cost by approximately <span className="font-mono font-semibold text-foreground">{latestCostImpact >= 0 ? '+' : ''}{euro.format(latestCostImpact)}</span> per tonne.</p>
-            {appliedEvent && <p className="mt-2 border-t border-accent/20 pt-2 text-[10px] leading-4 text-accent">Applied hypothetical shock: {appliedEvent}. Forecast and cost anatomy now use this historical magnitude.</p>}
+            {appliedEvent && <p className="mt-2 border-t border-accent/20 pt-2 text-[10px] leading-4 text-accent">Applied hypothetical shock: {appliedEvent.event.name}. Forecast and cost anatomy now use this historical magnitude.</p>}
+          </div>
+          <div className="mt-4 rounded-sm border border-border bg-secondary/25 p-4">
+            {appliedEvent ? (() => {
+              const { event, values } = appliedEvent;
+              const scenarioCost = calculateScenarioCost(baseCost, values);
+              const move = event.factorMoves[activeKey];
+              const currentInput = input?.value ?? 0;
+              const shockedInput = currentInput * (1 + move / 100);
+              const difference = scenarioCost - baseCost;
+              return <div data-testid="event-calculation">
+                <div className="flex items-start justify-between gap-3"><div><div className="label-caps text-muted-foreground">Applied event calculation</div><div className="mt-1 text-xs font-semibold">{event.name} ({event.date}) — {event.category}</div></div><button type="button" onClick={() => setAppliedEvent(null)} className="text-[10px] font-semibold text-muted-foreground hover:text-foreground">Clear</button></div>
+                <div className="mt-3 space-y-3 text-[11px] leading-4">
+                  <div><div className="font-semibold text-foreground">Historical magnitude</div><div className="mt-1 text-muted-foreground">{formatMove(move)} ({move >= 0 ? '+' : ''}{number.format(shockedInput - currentInput)} {factor.unit} on the affected input)</div></div>
+                  <div><div className="font-semibold text-foreground">Step 1 — Apply shock to baseline input price</div><div className="mt-1 text-muted-foreground">Current baseline price: <span className="font-mono text-foreground">{number.format(currentInput)} {factor.unit}</span> · Shocked price: <span className="font-mono text-foreground">{number.format(shockedInput)} {factor.unit}</span></div></div>
+                  <div><div className="font-semibold text-foreground">Step 2 — Recalculate production cost</div><div className="mt-1 text-muted-foreground">Base case: <span className="font-mono text-foreground">{euro.format(baseCost)}/t</span> · Scenario: <span className="font-mono text-foreground">{euro.format(scenarioCost)}/t</span> · Difference: <span className="font-mono text-foreground">{difference >= 0 ? '+' : ''}{euro.format(difference)}/t</span></div></div>
+                  <div className="border-t border-border/70 pt-3 text-muted-foreground">Result: Hypothetical projection based on historical magnitude: <span className="font-mono font-semibold text-foreground">{difference >= 0 ? '+' : ''}{euro.format(difference)}/t.</span></div>
+                </div>
+              </div>;
+            })() : <div data-testid="event-calculation-empty"><div className="label-caps text-muted-foreground">Event calculation</div><p className="mt-2 text-[11px] leading-4 text-muted-foreground">Select a historical event above and click “Apply this shock to forecast” to see the calculation.</p></div>}
           </div>
           <div className="mt-4 label-caps text-muted-foreground">Historical events</div>
-          <div className="mt-3 space-y-3">{MARKET_EVENTS.map((event) => { const move = event.factorMoves[activeKey]; const priceImpact = (input?.value ?? 0) * move / 100; const costImpact = baseCost * FACTOR_COST_SHARES[activeKey] * move / 100; const totalEventImpact = (baseCost * (0.74 * event.factorMoves.hrc + 0.08 * event.factorMoves.electricity + 0.04 * event.factorMoves.ttf + 0.02 * event.factorMoves.carbon)) / 100; const applyEvent = () => { setAppliedEvent(event.name); onApplyScenario({ preset: 'base', energy: 86.4, hrcShift: event.factorMoves.hrc, electricityShift: event.factorMoves.electricity, gasShift: event.factorMoves.ttf, euaShift: event.factorMoves.carbon, laborShare: 7, freight: 42, freeAllocation: 85 }, event.name); }; return <div key={event.date} className="border-l-2 border-primary/45 pl-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">{event.name}</span><span className="font-mono text-[10px] text-muted-foreground">{event.date}</span></div><div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] uppercase tracking-[.06em] text-primary"><span>{event.category}</span><span className="font-mono normal-case tracking-normal text-foreground">{formatMove(move)} · {priceImpact >= 0 ? '+' : ''}{number.format(priceImpact)} {factor.unit}</span></div><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{event.note} Estimated model effect: <span className="font-mono text-foreground">{costImpact >= 0 ? '+' : ''}{euro.format(costImpact)}/t.</span></p><button data-testid={`button-apply-event-${event.date}`} onClick={applyEvent} className="mt-2 rounded-sm border border-primary/40 bg-primary/5 px-2 py-1 text-[10px] font-semibold text-primary hover:bg-primary/10">Apply this shock to forecast</button><div className="mt-1 text-[10px] text-muted-foreground">Hypothetical projection based on historical magnitude: <span className="font-mono text-foreground">{totalEventImpact >= 0 ? '+' : ''}{euro.format(totalEventImpact)}/t.</span></div></div>; })}</div>
+          <div className="mt-3 space-y-3">{MARKET_EVENTS.map((event) => { const move = event.factorMoves[activeKey]; const priceImpact = (input?.value ?? 0) * move / 100; const costImpact = baseCost * FACTOR_COST_SHARES[activeKey] * move / 100; const totalEventImpact = (baseCost * (0.74 * event.factorMoves.hrc + 0.08 * event.factorMoves.electricity + 0.04 * event.factorMoves.ttf + 0.02 * event.factorMoves.carbon)) / 100; const applyEvent = () => { const values = { preset: 'base' as const, energy: 86.4, hrcShift: event.factorMoves.hrc, electricityShift: event.factorMoves.electricity, gasShift: event.factorMoves.ttf, euaShift: event.factorMoves.carbon, laborShare: 7, freight: 42, freeAllocation: 85 }; setAppliedEvent({ event, values }); onApplyScenario(values, event.name); }; return <div key={event.date} className="border-l-2 border-primary/45 pl-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">{event.name}</span><span className="font-mono text-[10px] text-muted-foreground">{event.date}</span></div><div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] uppercase tracking-[.06em] text-primary"><span>{event.category}</span><span className="font-mono normal-case tracking-normal text-foreground">{formatMove(move)} · {priceImpact >= 0 ? '+' : ''}{number.format(priceImpact)} {factor.unit}</span></div><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{event.note} Estimated model effect: <span className="font-mono text-foreground">{costImpact >= 0 ? '+' : ''}{euro.format(costImpact)}/t.</span></p><button data-testid={`button-apply-event-${event.date}`} onClick={applyEvent} className="mt-2 rounded-sm border border-primary/40 bg-primary/5 px-2 py-1 text-[10px] font-semibold text-primary hover:bg-primary/10">Apply this shock to forecast</button><div className="mt-1 text-[10px] text-muted-foreground">Hypothetical projection based on historical magnitude: <span className="font-mono text-foreground">{totalEventImpact >= 0 ? '+' : ''}{euro.format(totalEventImpact)}/t.</span></div></div>; })}</div>
         </div>
       </div>
       <div className="border-t border-border/70 px-5 py-3 text-[10px] leading-4 text-muted-foreground">Event markers describe movements associated with concurrent market conditions; they do not claim sole causation. Historical values are labeled as cached or estimated when a live source is unavailable.</div>
@@ -1228,7 +1251,7 @@ function Home() {
       setRefreshing(false);
     }
   };
-  const scenarioCost = overview && scenario ? Math.round(modelBaseCost * (1 + (0.74 * scenario.hrcShift + 0.08 * scenario.electricityShift + 0.04 * scenario.gasShift + 0.02 * scenario.euaShift) / 100) + (scenario.energy - 86.4) * 1.2 + (scenario.laborShare - 7) * modelBaseCost * 0.01 + (scenario.freight - 42) * 0.5 + (85 - scenario.freeAllocation) * 0.45) : undefined;
+  const scenarioCost = overview && scenario ? calculateScenarioCost(modelBaseCost, scenario) : undefined;
   const forecastForChart = useMemo<MarketForecast>(() => {
     if (!scenarioCost || !overview) return modelForecast;
     const delta = scenarioCost - modelBaseCost;
