@@ -1115,7 +1115,6 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
     downloadCsv(`steelcost-${activeKey}-historical-prices.csv`, rows);
   };
   return (
-    <>
     <section data-testid="panel-historical-prices" className="panel overflow-hidden">
       <div className="panel-header flex items-start justify-between gap-3 px-5 py-4">
         <div><div className="label-caps text-muted-foreground">Historical price context</div><h2 className="mt-1 font-display text-base font-semibold">Prices around market events</h2><div className="mt-1 text-[10px] text-muted-foreground">Updated {Number.isFinite(refreshedAt) ? formatUpdated(new Date(refreshedAt).toISOString()) : 'pending'} · latest move is calculated from the refreshed series</div></div>
@@ -1156,8 +1155,6 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
       </div>
       <div className="border-t border-border/70 px-5 py-3 text-[10px] leading-4 text-muted-foreground">Event markers describe movements associated with concurrent market conditions; they do not claim sole causation. Historical values are labeled as cached or estimated when a live source is unavailable.</div>
     </section>
-    {activeKey === 'hrc' && <div className="mt-5"><ChinaExportChart hrcHistory={fullHistory} /></div>}
-    </>
   );
 }
 
@@ -1282,6 +1279,9 @@ function Home() {
 
       {overview && (
         <div className="mb-6">
+          <div className="mb-5">
+            <ChinaExportChart hrcHistory={seriesForChart.find((item) => item.key === 'hrc')?.history ?? []} />
+          </div>
           <HistoricalPricesPanel series={seriesForChart} inputs={overview.inputs} baseCost={modelBaseCost} refreshedAt={refreshedAt} onApplyScenario={applyHistoricalEvent} />
         </div>
       )}
