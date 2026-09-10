@@ -1139,7 +1139,15 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
         <div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><div className="label-caps text-muted-foreground">{factor.label}</div><div className="data-mono mt-1 text-xl font-semibold">{number.format(latestValue)} <span className="text-xs font-normal text-muted-foreground">{factor.unit}</span></div></div><div className="flex rounded-sm border border-border bg-secondary/55 p-1">{([['1y', '1 year'], ['3y', '3 years'], ['5y', '5 years'], ['full', 'Full history']] as const).map(([key, label]) => <button data-testid={`button-history-range-${key}`} key={key} onClick={() => setRange(key)} className={`rounded-sm px-2 py-1.5 text-[10px] font-semibold ${range === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{label}</button>)}</div></div>
           <svg className="mt-4 h-36 w-full" viewBox="0 0 340 142" role="img" aria-label={`${factor.label} historical price chart`}>
-            <line x1="18" y1="116" x2="334" y2="116" stroke="hsl(var(--border))" />
+            <line x1="18" y1="18" x2="18" y2="116" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
+            <line x1="18" y1="116" x2="334" y2="116" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
+            {[18, 67, 116].map((yPosition, index) => {
+              const value = max - ((max - min) * index) / 2;
+              return <g key={`y-axis-${yPosition}`}>
+                <line x1="15" y1={yPosition} x2="18" y2={yPosition} stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
+                <text x="13" y={yPosition + 3} textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="7">{number.format(value)}</text>
+              </g>;
+            })}
             <polyline points={chartPoints} fill="none" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
             {range === '1y' && history.map((point, index) => <circle key={`${point.label}-${index}`} cx={chartX(index)} cy={chartY(point.value)} r={index === history.length - 1 ? 4 : 2.5} fill="hsl(var(--card))" stroke="hsl(var(--primary))" strokeWidth="2"><title>{`${point.label}: ${number.format(point.value)} ${factor.unit}`}</title></circle>)}
             {range !== '1y' && history.map((point, index) => <circle key={`${point.label}-${index}`} cx={chartX(index)} cy={chartY(point.value)} r="6" fill="transparent" stroke="none"><title>{`${point.label}: ${number.format(point.value)} ${factor.unit}`}</title></circle>)}
