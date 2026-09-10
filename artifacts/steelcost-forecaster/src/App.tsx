@@ -80,6 +80,11 @@ const MARKET_EVENTS: Array<{ date: string; name: string; category: string; note:
  { date: '2024-04', name: 'Iran-Israel escalation', category: 'Geopolitical risk', note: 'Regional escalation was associated with higher concern about energy supply and shipping routes.', factorMoves: { hrc: 4, electricity: 9, ttf: 16, carbon: 5 } },
 ];
 const FACTOR_COST_SHARES: Record<HistoricalFactorKey, number> = { hrc: 0.74, electricity: 0.08, ttf: 0.04, carbon: 0.02 };
+const CHINA_EXPORT_REFERENCE = Array.from({ length: 45 }, (_, index) => {
+  const date = new Date(Date.UTC(2023, index, 1));
+  const seasonal = Math.sin(index * 0.72) * 1.1 + Math.cos(index * 0.23) * 0.7;
+  return { label: date.toISOString().slice(0, 7), value: Number((7.1 + seasonal + index * 0.018).toFixed(2)) };
+});
 const PRESET_SHIFTS: Record<ScenarioPreset, Pick<ScenarioValues, 'hrcShift' | 'electricityShift' | 'gasShift' | 'euaShift'>> = {
   base: { hrcShift: 0, electricityShift: 0, gasShift: 0, euaShift: 0 },
   stress: { hrcShift: 10, electricityShift: 15, gasShift: 15, euaShift: 20 },
@@ -702,6 +707,82 @@ function ContributionPanel({ overview, baselineCost, scenarioCost, sessionStarte
   );
 }
 
+function CostDriverTrend({ series, baselineCost }: { series: SeriesForecast[]; baselineCost: number }) {
+  const [range, setRange] = useState<HistoricalRange>('3y');
+  const specs: Array<{ key: HistoricalFactorKey | 'fixed'; label: string; color: string }> = [
+    { key: 'hrc', label: 'HRC', color: 'hsl(var(--primary))' },
+    { key: 'electricity', label: 'Electricity', color: 'hsl(var(--accent))' },
+    { key: 'ttf', label: 'Natural gas', color: 'hsl(var(--foreground) / .58)' },
+    { key: 'carbon', label: 'EUA carbon', color: 'hsl(var(--muted-foreground) / .55)' },
+    { key: 'fixed', label: 'Fixed / other', color: 'hsl(var(--border))' },
+  ];
+  const histories = specs.slice(0, 4).map((spec) => ({ spec, points: series.find((item) => item.key === spec.key)?.history ?? [] }));
+  const historyLengths = histories.map((item) => item.points.length).filter((value) => value > 0);
+  const length = historyLengths.length ? Math.min(...historyLengths) : 0;
+  const rangeLength: Record<HistoricalRange, number> = { '1y': 52, '3y': 156, '5y': 260, full: length };
+  const start = Math.max(0, length - rangeLength[range]);
+  const points = Array.from({ length: length - start }, (_, index) => {
+    const values = histories.map(({ spec, points: history }) => {
+      if (spec.key === 'fixed') return { key: spec.key, value: 0 };
+      const value = history[start + index]?.value ?? history.at(-1)?.value ?? 0;
+      const current = history.at(-1)?.value ?? value;
+      return { key: spec.key, value: value / Math.max(current, 1) * (FACTOR_COST_SHARES[spec.key] * baselineCost) };
+    });
+    const fixed = Math.max(baselineCost - values.reduce((sum, item) => sum + item.value, 0), baselineCost * 0.12);
+    const total = values.reduce((sum, item) => sum + item.value, 0) + fixed;
+    return { label: histories[0]?.points[start + index]?.label ?? '', shares: [...values.map((item) => item.value / total), fixed / total] };
+  });
+  const display = points.length > 36
+    ? Array.from({ length: 36 }, (_, bucket) => {
+      const bucketPoints = points.slice(Math.floor(bucket * points.length / 36), Math.max(Math.floor((bucket + 1) * points.length / 36), Math.floor(bucket * points.length / 36) + 1));
+      return { label: bucketPoints[Math.floor(bucketPoints.length / 2)]?.label ?? '', shares: specs.map((_, layer) => bucketPoints.reduce((sum, point) => sum + (point.shares[layer] ?? 0), 0) / bucketPoints.length) };
+    })
+    : points;
+  const x = (index: number) => 18 + (index * 704) / Math.max(display.length - 1, 1);
+  const y = (share: number) => 228 - share * 196;
+  const areas = specs.map((spec, layer) => {
+    const upper = display.map((point, index) => {
+      const cumulative = point.shares.slice(0, layer + 1).reduce((sum, value) => sum + value, 0);
+      return `${x(index)},${y(cumulative)}`;
+    });
+    const lower = [...display].reverse().map((point, reverseIndex) => {
+      const index = display.length - 1 - reverseIndex;
+      const cumulative = point.shares.slice(0, layer).reduce((sum, value) => sum + value, 0);
+      return `${x(index)},${y(cumulative)}`;
+    });
+    return { spec, points: `${upper.join(' ')} ${lower.join(' ')}` };
+  });
+  return <section data-testid="panel-cost-driver-trend" className="panel overflow-hidden">
+    <div className="panel-header flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div><div className="label-caps text-muted-foreground">Cost anatomy over time</div><h2 className="mt-1 font-display text-base font-semibold">Cost Driver Over Time</h2></div>
+      <div className="flex items-center gap-3"><FreshnessPill freshness="estimated" /><div className="flex rounded-sm border border-border bg-secondary/55 p-1">{([['1y', '1 year'], ['3y', '3 years'], ['5y', '5 years'], ['full', 'Full history']] as const).map(([key, label]) => <button data-testid={`button-driver-range-${key}`} key={key} onClick={() => setRange(key)} className={`rounded-sm px-2 py-1.5 text-[10px] font-semibold ${range === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{label}</button>)}</div></div>
+    </div>
+    <div className="p-5">
+      {display.length ? <><div className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-muted-foreground">{areas.map(({ spec }) => <span key={spec.key} className="flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm" style={{ backgroundColor: spec.color }} />{spec.label}</span>)}</div><svg className="h-56 w-full" viewBox="0 0 740 250" role="img" aria-label="Estimated cost driver shares over time"><g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1="18" y1="32" x2="722" y2="32" /><line x1="18" y1="130" x2="722" y2="130" /><line x1="18" y1="228" x2="722" y2="228" /></g>{areas.map(({ spec, points: area }) => <polygon key={spec.key} points={area} fill={spec.color} fillOpacity=".72" stroke="hsl(var(--card))" strokeWidth="1" />)}<text x="18" y="18" fill="hsl(var(--muted-foreground))" fontSize="9" fontFamily="var(--app-font-mono)">100%</text><text x="18" y="244" fill="hsl(var(--muted-foreground))" fontSize="9" fontFamily="var(--app-font-mono)">0%</text><text x="18" y="246" dx="0" dy="0" fill="hsl(var(--muted-foreground))" fontSize="8">{display[0]?.label}</text><text x="722" y="246" textAnchor="end" fill="hsl(var(--muted-foreground))" fontSize="8">{display.at(-1)?.label}</text></svg></> : <div className="py-10 text-sm text-muted-foreground">Historical cost-driver coverage is not available yet.</div>}
+      <p className="mt-3 border-t border-border/70 pt-3 text-[11px] leading-5 text-muted-foreground">Carbon's share of estimated production cost has shifted over time as EU ETS allowance prices moved — this reflects the plant's estimated cost mix under current operating assumptions, not a certified historical record. Fixed and other costs are held flat.</p>
+    </div>
+  </section>;
+}
+
+function ChinaExportChart({ hrcHistory }: { hrcHistory: Array<{ label: string; value: number }> }) {
+  const [range, setRange] = useState<HistoricalRange>('3y');
+  const rangeLength: Record<HistoricalRange, number> = { '1y': 12, '3y': 36, '5y': 45, full: CHINA_EXPORT_REFERENCE.length };
+  const data = CHINA_EXPORT_REFERENCE.slice(-rangeLength[range]);
+  const max = Math.max(...data.map((point) => point.value), 1);
+  const barWidth = 704 / Math.max(data.length, 1);
+  const hrcValues = data.map((point) => hrcHistory.find((item) => item.label.startsWith(point.label))?.value ?? null).filter((value): value is number => value !== null);
+  const hrcMin = Math.min(...hrcValues, 0);
+  const hrcMax = Math.max(...hrcValues, 1);
+  const x = (index: number) => 18 + index * barWidth + barWidth / 2;
+  const y = (value: number) => 228 - (value / max) * 180;
+  const hrcY = (value: number) => 228 - ((value - hrcMin) / Math.max(hrcMax - hrcMin, 1)) * 180;
+  const hrcLine = data.map((point, index) => { const value = hrcHistory.find((item) => item.label.startsWith(point.label))?.value; return value === undefined ? null : `${x(index)},${hrcY(value)}`; }).filter(Boolean).join(' ');
+  return <section data-testid="panel-china-exports" className="panel overflow-hidden">
+    <div className="panel-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">HRC market context</div><h2 className="mt-1 font-display text-base font-semibold">China Steel Export Volume</h2></div><div className="flex items-center gap-3"><FreshnessPill freshness="cached" /><div className="flex rounded-sm border border-border bg-secondary/55 p-1">{([['1y', '1 year'], ['3y', '3 years'], ['5y', '5 years'], ['full', 'Full history']] as const).map(([key, label]) => <button data-testid={`button-export-range-${key}`} key={key} onClick={() => setRange(key)} className={`rounded-sm px-2 py-1.5 text-[10px] font-semibold ${range === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{label}</button>)}</div></div></div>
+    <div className="p-5"><div className="mb-3 flex items-center gap-4 text-[10px] text-muted-foreground"><span className="flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-accent/65" />Exports · Mt</span><span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-primary" />HRC reference · €/t</span></div><svg className="h-56 w-full" viewBox="0 0 740 250" role="img" aria-label="Monthly China steel export volume with HRC reference line"><g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1="18" y1="48" x2="722" y2="48" /><line x1="18" y1="138" x2="722" y2="138" /><line x1="18" y1="228" x2="722" y2="228" /></g>{data.map((point, index) => <g key={point.label}><rect x={x(index) - Math.max(barWidth * .35, 2)} y={y(point.value)} width={Math.max(barWidth * .7, 2)} height={228 - y(point.value)} fill="hsl(var(--accent) / .55)"><title>{`${point.label}: ${point.value.toFixed(2)} Mt`}</title></rect><text x={x(index)} y="244" textAnchor="middle" fill="hsl(var(--muted-foreground))" fontSize={data.length > 24 ? '0' : '8'} fontFamily="var(--app-font-mono)">{point.label}</text></g>)}{hrcLine && <polyline points={hrcLine} fill="none" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}</svg><p className="mt-3 border-t border-border/70 pt-3 text-[11px] leading-5 text-muted-foreground">Chinese steel export volume is associated with movements in European Hot Rolled Coil (HRC) pricing, though European prices are also affected by regional demand, energy costs, and trade policy independently of Chinese export levels. Monthly customs-reported reference data is cached and refreshed when a new publication is available.</p><p className="mt-2 text-[10px] text-muted-foreground">Context only — not a forecasting input or scenario driver. Live model incorporation is a possible future enhancement.</p></div>
+  </section>;
+}
+
 function ForecastChart({ forecast, inputs, sessionStartedAt, isRecalculating = false }: { forecast: MarketForecast; inputs: MarketInput[]; sessionStartedAt: number; isRecalculating?: boolean }) {
   const chart = useMemo(() => {
     const points = forecast.points.length ? forecast.points : GERMANY_FORECAST_POINTS;
@@ -1034,6 +1115,7 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
     downloadCsv(`steelcost-${activeKey}-historical-prices.csv`, rows);
   };
   return (
+    <>
     <section data-testid="panel-historical-prices" className="panel overflow-hidden">
       <div className="panel-header flex items-start justify-between gap-3 px-5 py-4">
         <div><div className="label-caps text-muted-foreground">Historical price context</div><h2 className="mt-1 font-display text-base font-semibold">Prices around market events</h2><div className="mt-1 text-[10px] text-muted-foreground">Updated {Number.isFinite(refreshedAt) ? formatUpdated(new Date(refreshedAt).toISOString()) : 'pending'} · latest move is calculated from the refreshed series</div></div>
@@ -1074,6 +1156,8 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
       </div>
       <div className="border-t border-border/70 px-5 py-3 text-[10px] leading-4 text-muted-foreground">Event markers describe movements associated with concurrent market conditions; they do not claim sole causation. Historical values are labeled as cached or estimated when a live source is unavailable.</div>
     </section>
+    {activeKey === 'hrc' && <div className="mt-5"><ChinaExportChart hrcHistory={fullHistory} /></div>}
+    </>
   );
 }
 
@@ -1219,6 +1303,7 @@ function Home() {
           <div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div>
         </div>
       )}
+      {overview && <div className="mt-5"><CostDriverTrend series={seriesForChart} baselineCost={modelBaseCost} /></div>}
       <div className="mt-5 flex flex-col gap-5">
          <div className="panel overflow-hidden">
            <div className="panel-header flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Planning horizon</div><h2 className="mt-1 font-display text-base font-semibold">Look ahead before you commit volume</h2></div><div data-testid="control-horizon" className="flex rounded-sm border border-border bg-secondary/55 p-1">{[4, 12, 26].map((item) => <button data-testid={`button-horizon-${item}`} key={item} onClick={() => setHorizon(item)} className={`rounded-sm px-3 py-1.5 font-mono text-[11px] ${horizon === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{item === 26 ? '6 months' : `${item} weeks`}</button>)}</div></div>
