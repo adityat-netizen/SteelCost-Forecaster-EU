@@ -1160,7 +1160,7 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
             })}
             {xLabelIndexes.map((index) => <text key={`x-label-${index}`} x={chartX(index)} y="138" textAnchor={index === 0 ? 'start' : index === history.length - 1 ? 'end' : 'middle'} fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="8">{formatAxisLabel(history[index]?.label ?? '')}</text>)}
             <text x="176" y="155" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600">DATE</text>
-            <text x="4" y="18" textAnchor="start" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600" transform="rotate(-90 4 18)">VALUE</text>
+            <text x="5" y="67" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600" transform="rotate(-90 5 67)">VALUE</text>
           </svg>
           <div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>{history[0]?.label}</span><span>Latest</span></div>
         </div>
