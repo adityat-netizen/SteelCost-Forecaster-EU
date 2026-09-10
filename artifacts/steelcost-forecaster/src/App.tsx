@@ -796,7 +796,7 @@ function SeriesForecastPanel({ series }: { series: SeriesForecast[] }) {
   if (!series.length) return null;
   return (
     <section data-testid="panel-series-forecasts" className="panel overflow-hidden">
-      <div className="panel-header flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Four signals before they become one cost</div><h2 className="mt-1 font-display text-base font-semibold">Independent price models</h2></div><div className="flex items-center gap-3 text-[10px] text-muted-foreground"><span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-muted-foreground/70" />History</span><span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-primary" />ETS forecast</span></div></div>
+      <div className="panel-header flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Independent price models</div><h2 className="mt-1 font-display text-base font-semibold">Four signals before they become one cost</h2></div><div className="flex items-center gap-3 text-[10px] text-muted-foreground"><span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-muted-foreground/70" />History</span><span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-primary" />ETS forecast</span></div></div>
       <div className="grid gap-3 p-5 md:grid-cols-2">{series.map((item) => <SeriesCard key={item.key} series={item} />)}</div>
       <div className="border-t border-border/70 px-5 py-4 text-[11px] leading-5 text-muted-foreground"><span className="font-semibold text-foreground">Cost layer.</span> The blended planning baseline below is recomputed from these four independent HRC, power, gas, and EUA paths. Zinc, freight, FX, and other inputs remain fixed or adjustable cost-model assumptions.</div>
     </section>
@@ -1196,8 +1196,6 @@ function Home() {
         )}
       </div>
 
-      {overview && <div className="mb-6"><SeriesForecastPanel series={seriesForChart} /></div>}
-
       {overview && (
         <div className="mb-6">
           <HistoricalPricesPanel series={seriesForChart} inputs={overview.inputs} baseCost={modelBaseCost} refreshedAt={refreshedAt} onApplyScenario={applyHistoricalEvent} />
@@ -1226,6 +1224,7 @@ function Home() {
            <div className="panel-header flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">Planning horizon</div><h2 className="mt-1 font-display text-base font-semibold">Look ahead before you commit volume</h2></div><div data-testid="control-horizon" className="flex rounded-sm border border-border bg-secondary/55 p-1">{[4, 12, 26].map((item) => <button data-testid={`button-horizon-${item}`} key={item} onClick={() => setHorizon(item)} className={`rounded-sm px-3 py-1.5 font-mono text-[11px] ${horizon === item ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{item === 26 ? '6 months' : `${item} weeks`}</button>)}</div></div>
            {forecastQuery.isError ? <div className="p-5"><EmptyOrError error onRetry={() => forecastQuery.refetch()} /></div> : overview ? <ForecastChart forecast={forecastForChart} inputs={overview.inputs} sessionStartedAt={sessionStartedAt} isRecalculating={isRecalculating} /> : <div className="p-5"><Skeleton className="h-64 w-full" /></div>}
         </div>
+         <SeriesForecastPanel series={seriesForChart} />
         <ForecastTrackRecord trackRecord={trackRecordQuery.data} />
         <BacktestEvidence backtest={backtest} />
          {overview && <><DecisionPanel overview={overview} /><ProsConsPanel /></>}
