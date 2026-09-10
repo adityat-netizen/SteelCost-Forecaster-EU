@@ -1145,7 +1145,7 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
               const value = max - ((max - min) * index) / 2;
               return <g key={`y-axis-${yPosition}`}>
                 <line x1="15" y1={yPosition} x2="18" y2={yPosition} stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
-                <text x="13" y={yPosition + 3} textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="7">{number.format(value)}</text>
+                <text x="16" y={yPosition + 3} textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="7">{number.format(value)}</text>
               </g>;
             })}
             <polyline points={chartPoints} fill="none" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -1160,7 +1160,7 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
             })}
             {xLabelIndexes.map((index) => <text key={`x-label-${index}`} x={chartX(index)} y="138" textAnchor={index === 0 ? 'start' : index === history.length - 1 ? 'end' : 'middle'} fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="8">{formatAxisLabel(history[index]?.label ?? '')}</text>)}
             <text x="176" y="155" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600">DATE</text>
-            <text x="5" y="67" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600" transform="rotate(-90 5 67)">VALUE</text>
+            <text x="2" y="67" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600" transform="rotate(-90 2 67)">VALUE</text>
           </svg>
           <div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>{history[0]?.label}</span><span>Latest</span></div>
         </div>
