@@ -17,11 +17,13 @@ import {
   FileText,
   Gauge,
   Info,
+  Layers,
   Menu,
   Printer,
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
+  Wrench,
   X,
   Zap,
 } from 'lucide-react';
@@ -595,23 +597,150 @@ function PageIntro({ onExportCsv, onExportSeries, onExportPdf, onRefresh, refres
   );
 }
 
+const INPUT_BLOCKS = [
+  {
+    key: 'raw_materials',
+    title: 'Raw Materials',
+    subtitle: 'Primary feedstock & metallic inputs',
+    keys: ['hrc', 'zinc'],
+  },
+  {
+    key: 'consumables',
+    title: 'Consumables',
+    subtitle: 'Chemicals, lubricants & wear parts',
+    keys: ['picklingAcid', 'rollingOil', 'workRolls'],
+  },
+  {
+    key: 'utilities',
+    title: 'Utilities & Energy',
+    subtitle: 'Electricity, natural gas, water & carbon',
+    keys: ['electricity', 'ttf', 'water', 'compressedAir', 'carbon'],
+  },
+  {
+    key: 'macro',
+    title: 'Operations & Logistics',
+    subtitle: 'Labour rates, corridor freight, FX & crude',
+    keys: ['labor', 'freight', 'eurUsd', 'brent'],
+  },
+] as const;
+
 function MarketInputPanel({ overview, sessionStartedAt }: { overview: MarketOverview; sessionStartedAt: number }) {
+  const [activeCategory, setActiveCategory] = useState<string>('all');
+
+  const visibleBlocks = activeCategory === 'all'
+    ? INPUT_BLOCKS
+    : INPUT_BLOCKS.filter((b) => b.key === activeCategory);
+
   return (
-    <section className="panel appear overflow-hidden">
+    <section data-testid="panel-market-inputs" className="panel appear overflow-hidden">
       <div className="panel-header flex items-center justify-between px-5 py-4">
-        <div><div className="label-caps text-muted-foreground">Market snapshot</div><h2 className="mt-1 font-display text-base font-semibold">Current inputs</h2></div>
-        <div className="flex items-center gap-2 text-right"><Activity size={14} className="text-accent" /><div><div className="label-caps text-muted-foreground">As of</div><div data-testid="text-market-as-of" className="font-mono text-[11px] text-foreground">{formatDate(overview.asOf)}</div></div></div>
-      </div>
-      <div className="divide-y divide-border/70">
-        {overview.inputs.map((input) => (
-          <div data-testid={`row-market-input-${input.key}`} key={input.key} className="group grid grid-cols-[1fr_auto] gap-3 px-5 py-3.5 sm:grid-cols-[1fr_auto_auto] sm:items-center">
-            <div><div className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">{input.label}<ProvenanceTag input={input} /></div><div className="mt-1 text-[11px] text-muted-foreground">{input.source} · updated {formatUpdated(input.updatedAt)}</div></div>
-            <div data-testid={`text-market-value-${input.key}`} className="data-mono text-right text-sm font-semibold text-foreground">{number.format(input.value)} <span className="text-[10px] font-normal text-muted-foreground">{input.unit}</span></div>
-            <div className="col-span-2 flex items-center justify-between gap-2 sm:col-span-1 sm:justify-self-end"><FreshnessPill freshness={input.freshness} /><LiveIndicator input={input} sessionStartedAt={sessionStartedAt} /></div>
+        <div>
+          <div className="label-caps text-muted-foreground">Market snapshot</div>
+          <h2 className="mt-1 font-display text-base font-semibold">Current inputs</h2>
+        </div>
+        <div className="flex items-center gap-2 text-right">
+          <Activity size={14} className="text-accent" />
+          <div>
+            <div className="label-caps text-muted-foreground">As of</div>
+            <div data-testid="text-market-as-of" className="font-mono text-[11px] text-foreground">
+              {formatDate(overview.asOf)}
+            </div>
           </div>
-        ))}
+        </div>
       </div>
-      <div className="flex items-start gap-3 bg-secondary/55 px-5 py-3.5 text-xs leading-5 text-muted-foreground"><Info size={14} className="mt-0.5 shrink-0 text-accent" /><span>Live values are refreshed as source feeds publish. Cached and estimated values remain visible so you can judge the model’s signal quality.</span></div>
+
+      <div className="flex gap-1 overflow-x-auto border-b border-border/70 bg-secondary/20 px-5 py-2">
+        <button
+          type="button"
+          onClick={() => setActiveCategory('all')}
+          className={`rounded-sm px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+            activeCategory === 'all'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+          }`}
+        >
+          All ({overview.inputs.length})
+        </button>
+        {INPUT_BLOCKS.map((block) => {
+          const count = overview.inputs.filter((i) => (block.keys as readonly string[]).includes(i.key)).length;
+          return (
+            <button
+              key={block.key}
+              type="button"
+              onClick={() => setActiveCategory(block.key)}
+              className={`rounded-sm px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                activeCategory === block.key
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+              }`}
+            >
+              {block.title} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      <div>
+        {visibleBlocks.map((block) => {
+          const blockInputs = overview.inputs.filter((i) => (block.keys as readonly string[]).includes(i.key));
+          if (!blockInputs.length) return null;
+          return (
+            <div key={block.key} data-testid={`block-market-inputs-${block.key}`}>
+              <div className="flex items-center justify-between border-y border-border/70 bg-secondary/50 px-5 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                  <span className="text-xs font-semibold text-foreground uppercase tracking-[.06em]">
+                    {block.title}
+                  </span>
+                  <span className="hidden text-[10px] text-muted-foreground sm:inline">
+                    · {block.subtitle}
+                  </span>
+                </div>
+                <span className="rounded bg-secondary/80 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  {blockInputs.length} {blockInputs.length === 1 ? 'input' : 'inputs'}
+                </span>
+              </div>
+              <div className="divide-y divide-border/60">
+                {blockInputs.map((input) => (
+                  <div
+                    data-testid={`row-market-input-${input.key}`}
+                    key={input.key}
+                    className="group grid grid-cols-[1fr_auto] gap-3 px-5 py-3.5 transition-colors hover:bg-secondary/15 sm:grid-cols-[1fr_auto_auto] sm:items-center"
+                  >
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+                        {input.label}
+                        <ProvenanceTag input={input} />
+                      </div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {input.source} · updated {formatUpdated(input.updatedAt)}
+                      </div>
+                    </div>
+                    <div
+                      data-testid={`text-market-value-${input.key}`}
+                      className="data-mono text-right text-sm font-semibold text-foreground"
+                    >
+                      {number.format(input.value)}{' '}
+                      <span className="text-[10px] font-normal text-muted-foreground">{input.unit}</span>
+                    </div>
+                    <div className="col-span-2 flex items-center justify-between gap-2 sm:col-span-1 sm:justify-self-end">
+                      <FreshnessPill freshness={input.freshness} />
+                      <LiveIndicator input={input} sessionStartedAt={sessionStartedAt} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-start gap-3 bg-secondary/55 px-5 py-3.5 text-xs leading-5 text-muted-foreground">
+        <Info size={14} className="mt-0.5 shrink-0 text-accent" />
+        <span>
+          Live values are refreshed as source feeds publish. Cached and estimated values remain visible so you can judge the model’s signal quality.
+        </span>
+      </div>
     </section>
   );
 }
@@ -689,38 +818,470 @@ function ScenarioPanel({ overview, country, setCountry, onApply }: { overview: M
   );
 }
 
-function ContributionPanel({ overview, baselineCost, scenarioCost, sessionStartedAt }: { overview: MarketOverview; baselineCost: number; scenarioCost?: number; sessionStartedAt: number }) {
-  const total = scenarioCost ?? baselineCost;
-  const parts = [
-    { label: 'HRC feedstock', value: Math.round(total * .74), color: 'bg-primary' },
-    { label: 'Conversion materials', value: Math.round(total * .04), color: 'bg-primary/60' },
-    { label: 'Utilities & carbon', value: Math.round(total * .12), color: 'bg-accent' },
-    { label: 'Labour', value: Math.round(total * .06), color: 'bg-foreground/55' },
-    { label: 'Logistics', value: Math.round(total * .03), color: 'bg-muted-foreground/55' },
-    { label: 'Overhead + margin', value: Math.round(total * .01), color: 'bg-muted-foreground/35' },
+function RawMaterialsCard({ total, overview, sessionStartedAt }: { total: number; overview: MarketOverview; sessionStartedAt: number }) {
+  const rawMaterialsTotal = Math.round(total * 0.74);
+  const shareOfTotal = ((rawMaterialsTotal / total) * 100).toFixed(1);
+  const hrcInput = overview.inputs.find((i) => i.key === 'hrc');
+  const zincInput = overview.inputs.find((i) => i.key === 'zinc');
+
+  const items = [
+    {
+      name: 'Hot Rolled Coil (HRC)',
+      status: 'active' as const,
+      cost: rawMaterialsTotal,
+      shareOfRaw: '100%',
+      shareOfTotal: `${Math.round((rawMaterialsTotal / total) * 100)}%`,
+      note: 'Primary feedstock for cold-rolling route',
+      input: hrcInput,
+    },
+    {
+      name: 'Zinc (LME-priced)',
+      status: 'unitemized' as const,
+      cost: null,
+      shareOfRaw: '—',
+      shareOfTotal: '—',
+      note: 'Not yet itemized (galvanized coating lines only)',
+      input: zincInput,
+    },
+    {
+      name: 'Alloying elements (Cr, Ni)',
+      status: 'unitemized' as const,
+      cost: null,
+      shareOfRaw: '—',
+      shareOfTotal: '—',
+      note: 'Not yet itemized (specialty / stainless-adjacent)',
+      input: null,
+    },
   ];
-  const signalInputs = overview.inputs.filter((input) => ['hrc', 'zinc', 'electricity', 'carbon'].includes(input.key));
+
+  return (
+    <section data-testid="panel-raw-materials" className="panel appear appear-delay-2 flex flex-col justify-between overflow-hidden">
+      <div>
+        <div className="panel-header flex items-center justify-between px-5 py-4">
+          <div>
+            <div className="label-caps text-muted-foreground">Cost anatomy · Primary feedstock</div>
+            <h2 className="mt-1 font-display text-base font-semibold">Raw Materials</h2>
+          </div>
+          <Layers size={17} className="text-primary" />
+        </div>
+        <div className="p-5">
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="label-caps text-muted-foreground">Raw materials total</div>
+              <div data-testid="text-raw-materials-total" className="mt-1 data-mono text-3xl font-semibold tracking-[-.05em]">
+                {euro.format(rawMaterialsTotal)}
+                <span className="ml-1 text-sm font-normal tracking-normal text-muted-foreground">/ t</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="rounded-sm bg-primary/10 px-2 py-0.5 font-mono text-xs font-semibold text-primary">
+                {shareOfTotal}%
+              </span>
+              <div className="mt-1 text-[10px] text-muted-foreground">of total production cost</div>
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <div className="mb-1 flex justify-between text-[11px]">
+              <span className="font-medium text-foreground">HRC Feedstock Share</span>
+              <span className="font-mono text-muted-foreground">100% of raw materials</span>
+            </div>
+            <div className="flex h-2.5 overflow-hidden rounded-[2px] bg-secondary">
+              <div style={{ width: '100%' }} className="bg-primary transition-all duration-300" />
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-2.5">
+            {items.map((item) => (
+              <div
+                key={item.name}
+                data-testid={`row-raw-material-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                className="rounded-sm border border-border/70 bg-secondary/20 p-2.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-[1px] ${item.status === 'active' ? 'bg-primary' : 'bg-muted-foreground/40'}`} />
+                    <span className="text-xs font-semibold text-foreground">{item.name}</span>
+                  </div>
+                  {item.cost !== null ? (
+                    <div className="text-right">
+                      <span className="data-mono text-xs font-semibold text-foreground">{euro.format(item.cost)}</span>
+                      <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">({item.shareOfTotal})</span>
+                    </div>
+                  ) : (
+                    <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[9px] font-medium text-muted-foreground">
+                      Not yet itemized
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+                  <span>{item.note}</span>
+                  {item.cost !== null && (
+                    <span className="font-mono text-[10px] text-primary">{item.shareOfRaw} of raw materials</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 border-t border-border/70 pt-4">
+            <div className="mb-2 label-caps text-muted-foreground">Signals used in this view</div>
+            <div className="flex flex-wrap gap-2">
+              {hrcInput && <LiveIndicator input={hrcInput} sessionStartedAt={sessionStartedAt} />}
+              {zincInput && <LiveIndicator input={zincInput} sessionStartedAt={sessionStartedAt} />}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="border-t border-border/70 bg-secondary/15 px-5 py-3 text-[11px] leading-4 text-muted-foreground">
+        HRC is the dominant feedstock for cold-rolling lines. Iron ore and metallurgical coal are embedded in purchased coil.
+      </div>
+    </section>
+  );
+}
+
+function ConsumablesCard({ total, overview, sessionStartedAt }: { total: number; overview: MarketOverview; sessionStartedAt: number }) {
+  const consumablesTotal = Math.round(total * 0.04);
+  const shareOfTotal = ((consumablesTotal / total) * 100).toFixed(1);
+  const picklingInput = overview.inputs.find((i) => i.key === 'picklingAcid');
+  const rollingOilInput = overview.inputs.find((i) => i.key === 'rollingOil');
+  const workRollsInput = overview.inputs.find((i) => i.key === 'workRolls');
+  const compressedAirInput = overview.inputs.find((i) => i.key === 'compressedAir');
+
+  const items = [
+    {
+      name: 'Conversion consumables total',
+      status: 'active' as const,
+      cost: consumablesTotal,
+      shareOfConsumables: '100%',
+      shareOfTotal: `${Math.round((consumablesTotal / total) * 100)}%`,
+      note: 'Active model allocation for cold-mill chemical & wear inputs',
+    },
+    {
+      name: 'Pickling acids (HCl / H₂SO₄)',
+      status: 'unitemized' as const,
+      cost: null,
+      shareOfConsumables: '—',
+      shareOfTotal: '—',
+      note: 'Not yet itemized individually (bundled in conversion cost)',
+      input: picklingInput,
+    },
+    {
+      name: 'Rolling oils & emulsions',
+      status: 'unitemized' as const,
+      cost: null,
+      shareOfConsumables: '—',
+      shareOfTotal: '—',
+      note: 'Not yet itemized individually (bundled in conversion cost)',
+      input: rollingOilInput,
+    },
+    {
+      name: 'Refractories & work rolls',
+      status: 'unitemized' as const,
+      cost: null,
+      shareOfConsumables: '—',
+      shareOfTotal: '—',
+      note: 'Not yet itemized individually (wear / replacement cost)',
+      input: workRollsInput,
+    },
+    {
+      name: 'Compressed air & inert gases',
+      status: 'unitemized' as const,
+      cost: null,
+      shareOfConsumables: '—',
+      shareOfTotal: '—',
+      note: 'Not yet itemized individually (annealing atmosphere / utility)',
+      input: compressedAirInput,
+    },
+  ];
+
+  return (
+    <section data-testid="panel-consumables" className="panel appear appear-delay-2 flex flex-col justify-between overflow-hidden">
+      <div>
+        <div className="panel-header flex items-center justify-between px-5 py-4">
+          <div>
+            <div className="label-caps text-muted-foreground">Cost anatomy · Operational inputs</div>
+            <h2 className="mt-1 font-display text-base font-semibold">Consumables</h2>
+          </div>
+          <Wrench size={17} className="text-primary" />
+        </div>
+        <div className="p-5">
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="label-caps text-muted-foreground">Consumables total</div>
+              <div data-testid="text-consumables-total" className="mt-1 data-mono text-3xl font-semibold tracking-[-.05em]">
+                {euro.format(consumablesTotal)}
+                <span className="ml-1 text-sm font-normal tracking-normal text-muted-foreground">/ t</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="rounded-sm bg-primary/10 px-2 py-0.5 font-mono text-xs font-semibold text-primary">
+                {shareOfTotal}%
+              </span>
+              <div className="mt-1 text-[10px] text-muted-foreground">of total production cost</div>
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <div className="mb-1 flex justify-between text-[11px]">
+              <span className="font-medium text-foreground">Mill Consumables Share</span>
+              <span className="font-mono text-muted-foreground">100% of consumables</span>
+            </div>
+            <div className="flex h-2.5 overflow-hidden rounded-[2px] bg-secondary">
+              <div style={{ width: '100%' }} className="bg-primary/75 transition-all duration-300" />
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-2.5">
+            {items.map((item) => (
+              <div
+                key={item.name}
+                data-testid={`row-consumable-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                className="rounded-sm border border-border/70 bg-secondary/20 p-2.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-[1px] ${item.status === 'active' ? 'bg-primary/75' : 'bg-muted-foreground/40'}`} />
+                    <span className="text-xs font-semibold text-foreground">{item.name}</span>
+                  </div>
+                  {item.cost !== null ? (
+                    <div className="text-right">
+                      <span className="data-mono text-xs font-semibold text-foreground">{euro.format(item.cost)}</span>
+                      <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">({item.shareOfTotal})</span>
+                    </div>
+                  ) : (
+                    <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[9px] font-medium text-muted-foreground">
+                      Not yet itemized
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+                  <span>{item.note}</span>
+                  {item.cost !== null && (
+                    <span className="font-mono text-[10px] text-primary">{item.shareOfConsumables} of consumables</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 border-t border-border/70 pt-4">
+            <div className="mb-2 label-caps text-muted-foreground">Signals used in this view</div>
+            <div className="flex flex-wrap gap-2">
+              {picklingInput && <LiveIndicator input={picklingInput} sessionStartedAt={sessionStartedAt} />}
+              {rollingOilInput && <LiveIndicator input={rollingOilInput} sessionStartedAt={sessionStartedAt} />}
+              {workRollsInput && <LiveIndicator input={workRollsInput} sessionStartedAt={sessionStartedAt} />}
+              {compressedAirInput && <LiveIndicator input={compressedAirInput} sessionStartedAt={sessionStartedAt} />}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="border-t border-border/70 bg-secondary/15 px-5 py-3 text-[11px] leading-4 text-muted-foreground">
+        Covers acid pickling, rolling lubrications, roll grinds, and process gases. Individual line items remain bundled in model conversion rate.
+      </div>
+    </section>
+  );
+}
+
+function OperationsCard({
+  total,
+  baselineCost,
+  scenarioCost,
+  overview,
+  sessionStartedAt,
+}: {
+  total: number;
+  baselineCost: number;
+  scenarioCost?: number;
+  overview: MarketOverview;
+  sessionStartedAt: number;
+}) {
+  const parts = [
+    { label: 'Utilities & carbon', value: Math.round(total * 0.12), shareOfTotal: '12%', color: 'bg-accent' },
+    { label: 'Labour', value: Math.round(total * 0.06), shareOfTotal: '6%', color: 'bg-foreground/55' },
+    { label: 'Logistics', value: Math.round(total * 0.03), shareOfTotal: '3%', color: 'bg-muted-foreground/55' },
+    { label: 'Overhead + margin', value: Math.round(total * 0.01), shareOfTotal: '1%', color: 'bg-muted-foreground/35' },
+  ];
+  const operationsTotal = parts.reduce((sum, p) => sum + p.value, 0);
+  const shareOfTotal = ((operationsTotal / total) * 100).toFixed(1);
+
+  const signalInputs = overview.inputs.filter((input) => ['electricity', 'ttf', 'carbon', 'labor', 'freight'].includes(input.key));
   const sensitivity = [
     { label: 'HRC', share: 0.74, color: 'bg-primary' },
     { label: 'Electricity', share: 0.08, color: 'bg-accent' },
     { label: 'Natural gas', share: 0.04, color: 'bg-foreground/55' },
     { label: 'EUA', share: 0.02, color: 'bg-muted-foreground/55' },
-  ].map((item) => ({ ...item, swing: Math.round(baselineCost * item.share * 0.1) })).sort((a, b) => b.swing - a.swing);
+  ]
+    .map((item) => ({ ...item, swing: Math.round(baselineCost * item.share * 0.1) }))
+    .sort((a, b) => b.swing - a.swing);
+
   return (
-    <section className="panel appear appear-delay-2 overflow-hidden">
-      <div className="panel-header flex items-center justify-between px-5 py-4"><div><div className="label-caps text-muted-foreground">Cost anatomy</div><h2 className="mt-1 font-display text-base font-semibold">What drives the tonne</h2></div><BarChart3 size={17} className="text-primary" /></div>
-      <div className="p-5">
-        <div className="flex items-end justify-between"><div><div className="label-caps text-muted-foreground">Estimated {scenarioCost ? 'scenario' : 'base'} cost</div><div data-testid="text-base-cost" className="mt-1 data-mono text-3xl font-semibold tracking-[-.05em]">{euro.format(total)}<span className="ml-1 text-sm font-normal tracking-normal text-muted-foreground">/ t</span></div></div><div className="text-right text-xs text-muted-foreground">{scenarioCost ? 'with overrides' : 'before scenario'}<br /><span className="font-mono text-foreground">{overview.country}</span></div></div>
-         <div className="mt-6 flex h-3 overflow-hidden rounded-[2px] bg-secondary">{parts.map((part) => <div key={part.label} style={{ width: `${(part.value / total) * 100}%` }} className={`${part.color} transition-all duration-300`} />)}</div>
-        <div className="mt-5 space-y-3">{parts.map((part) => <div data-testid={`row-cost-contribution-${part.label.toLowerCase().replaceAll(' ', '-')}`} key={part.label} className="flex items-center justify-between text-xs"><span className="flex items-center gap-2.5 text-muted-foreground"><span className={`h-2 w-2 rounded-[1px] ${part.color}`} />{part.label}</span><span className="data-mono font-medium text-foreground">{euro.format(part.value)} <span className="ml-1 text-[10px] text-muted-foreground">{Math.round((part.value / total) * 100)}%</span></span></div>)}</div>
-         <div className="mt-6 border-t border-border/70 pt-4"><div className="mb-2 label-caps text-muted-foreground">Signals used in this view</div><div className="flex flex-wrap gap-2">{signalInputs.map((input) => <LiveIndicator key={input.key} input={input} sessionStartedAt={sessionStartedAt} />)}</div></div>
-          <div className="mt-6 border-t border-border/70 pt-4">
-            <div className="flex items-center justify-between"><div><div className="label-caps text-muted-foreground">Sensitivity</div><div className="mt-1 text-xs font-semibold">Impact of a +10% move</div></div><span className="font-mono text-[10px] text-muted-foreground">€/t swing</span></div>
-            <div className="mt-4 space-y-3">{sensitivity.map((item) => <div data-testid={`row-sensitivity-${item.label.toLowerCase().replaceAll(' ', '-')}`} key={item.label}><div className="mb-1 flex justify-between text-[11px]"><span className="text-muted-foreground">{item.label}</span><span className="data-mono font-semibold text-foreground">+{euro.format(item.swing)}</span></div><div className="h-2 overflow-hidden rounded-full bg-secondary"><div className={`h-full ${item.color}`} style={{ width: `${Math.max(8, (item.swing / Math.max(sensitivity[0].swing, 1)) * 100)}%` }} /></div></div>)}</div>
+    <section data-testid="panel-operations-cost" className="panel appear appear-delay-2 flex flex-col justify-between overflow-hidden">
+      <div>
+        <div className="panel-header flex items-center justify-between px-5 py-4">
+          <div>
+            <div className="label-caps text-muted-foreground">Cost anatomy · Operations & Energy</div>
+            <h2 className="mt-1 font-display text-base font-semibold">Operations & Utilities</h2>
           </div>
-         <div className="mt-4 text-[11px] leading-5 text-muted-foreground">HRC is intentionally dominant for a pure cold-rolling route. Iron ore and met coal remain embedded in purchased HRC here and are not double-counted.</div>
+          <BarChart3 size={17} className="text-primary" />
+        </div>
+        <div className="p-5">
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="label-caps text-muted-foreground">Operations total</div>
+              <div data-testid="text-operations-total" className="mt-1 data-mono text-3xl font-semibold tracking-[-.05em]">
+                {euro.format(operationsTotal)}
+                <span className="ml-1 text-sm font-normal tracking-normal text-muted-foreground">/ t</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="rounded-sm bg-accent/10 px-2 py-0.5 font-mono text-xs font-semibold text-accent">
+                {shareOfTotal}%
+              </span>
+              <div className="mt-1 text-[10px] text-muted-foreground">of total production cost</div>
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <div className="mb-1 flex justify-between text-[11px]">
+              <span className="font-medium text-foreground">Operational Cost Mix</span>
+              <span className="font-mono text-muted-foreground">100% of operations</span>
+            </div>
+            <div className="flex h-2.5 overflow-hidden rounded-[2px] bg-secondary">
+              {parts.map((part) => (
+                <div
+                  key={part.label}
+                  style={{ width: `${(part.value / operationsTotal) * 100}%` }}
+                  className={`${part.color} transition-all duration-300`}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-2.5">
+            {parts.map((part) => (
+              <div
+                data-testid={`row-cost-contribution-${part.label.toLowerCase().replaceAll(' ', '-')}`}
+                key={part.label}
+                className="flex items-center justify-between rounded-sm border border-border/70 bg-secondary/20 p-2.5 text-xs"
+              >
+                <span className="flex items-center gap-2 text-muted-foreground">
+                  <span className={`h-2 w-2 rounded-[1px] ${part.color}`} />
+                  {part.label}
+                </span>
+                <span className="data-mono font-medium text-foreground">
+                  {euro.format(part.value)}{' '}
+                  <span className="ml-1 font-mono text-[10px] text-muted-foreground">({part.shareOfTotal})</span>
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 border-t border-border/70 pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="label-caps text-muted-foreground">Sensitivity</div>
+                <div className="mt-0.5 text-xs font-semibold">Impact of a +10% move</div>
+              </div>
+              <span className="font-mono text-[10px] text-muted-foreground">€/t swing</span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {sensitivity.map((item) => (
+                <div data-testid={`row-sensitivity-${item.label.toLowerCase().replaceAll(' ', '-')}`} key={item.label}>
+                  <div className="mb-1 flex justify-between text-[11px]">
+                    <span className="text-muted-foreground">{item.label}</span>
+                    <span className="data-mono font-semibold text-foreground">+{euro.format(item.swing)}</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                    <div
+                      className={`h-full ${item.color}`}
+                      style={{ width: `${Math.max(8, (item.swing / Math.max(sensitivity[0].swing, 1)) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 border-t border-border/70 pt-4">
+            <div className="mb-2 label-caps text-muted-foreground">Signals used in this view</div>
+            <div className="flex flex-wrap gap-2">
+              {signalInputs.map((input) => (
+                <LiveIndicator key={input.key} input={input} sessionStartedAt={sessionStartedAt} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="border-t border-border/70 bg-secondary/15 px-5 py-3 text-[11px] leading-4 text-muted-foreground">
+        Country power tariffs, carbon benchmarks, labor indices, and freight corridors are adjusted for {overview.country}.
       </div>
     </section>
+  );
+}
+
+function CostAnatomySection({
+  overview,
+  baselineCost,
+  scenarioCost,
+  sessionStartedAt,
+}: {
+  overview: MarketOverview;
+  baselineCost: number;
+  scenarioCost?: number;
+  sessionStartedAt: number;
+}) {
+  const total = scenarioCost ?? baselineCost;
+  return (
+    <div className="mt-6">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <div className="label-caps text-muted-foreground">Cost structure breakdown</div>
+          <h2 className="mt-0.5 font-display text-lg font-semibold">Cost Anatomy by Category</h2>
+        </div>
+        <div className="text-right">
+          <div className="label-caps text-muted-foreground">Estimated {scenarioCost ? 'scenario' : 'base'} cost</div>
+          <div data-testid="text-base-cost" className="data-mono text-xl font-semibold text-foreground">
+            {euro.format(total)}{' '}
+            <span className="text-xs font-normal text-muted-foreground">/ t ({overview.country})</span>
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <RawMaterialsCard total={total} overview={overview} sessionStartedAt={sessionStartedAt} />
+        <ConsumablesCard total={total} overview={overview} sessionStartedAt={sessionStartedAt} />
+        <div className="md:col-span-2 xl:col-span-1">
+          <OperationsCard
+            total={total}
+            baselineCost={baselineCost}
+            scenarioCost={scenarioCost}
+            overview={overview}
+            sessionStartedAt={sessionStartedAt}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ContributionPanel({
+  overview,
+  baselineCost,
+  scenarioCost,
+  sessionStartedAt,
+}: {
+  overview: MarketOverview;
+  baselineCost: number;
+  scenarioCost?: number;
+  sessionStartedAt: number;
+}) {
+  return (
+    <CostAnatomySection
+      overview={overview}
+      baselineCost={baselineCost}
+      scenarioCost={scenarioCost}
+      sessionStartedAt={sessionStartedAt}
+    />
   );
 }
 
@@ -1175,25 +1736,6 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
             <p className="mt-1 text-[11px] leading-4 text-muted-foreground">This refresh changes the modeled cost by approximately <span className="font-mono font-semibold text-foreground">{latestCostImpact >= 0 ? '+' : ''}{euro.format(latestCostImpact)}</span> per tonne.</p>
             {appliedEvent && <p className="mt-2 border-t border-accent/20 pt-2 text-[10px] leading-4 text-accent">Applied hypothetical shock: {appliedEvent.event.name}. Forecast and cost anatomy now use this historical magnitude.</p>}
           </div>
-          <div className="mt-4 rounded-sm border border-border bg-secondary/25 p-4">
-            {appliedEvent ? (() => {
-              const { event, values } = appliedEvent;
-              const scenarioCost = calculateScenarioCost(baseCost, values);
-              const move = event.factorMoves[activeKey];
-              const currentInput = input?.value ?? 0;
-              const shockedInput = currentInput * (1 + move / 100);
-              const difference = scenarioCost - baseCost;
-              return <div data-testid="event-calculation">
-                <div className="flex items-start justify-between gap-3"><div><div className="label-caps text-muted-foreground">Applied event calculation</div><div className="mt-1 text-xs font-semibold">{event.name} ({event.date}) — {event.category}</div></div><button type="button" onClick={() => setAppliedEvent(null)} className="text-[10px] font-semibold text-muted-foreground hover:text-foreground">Clear</button></div>
-                <div className="mt-3 space-y-3 text-[11px] leading-4">
-                  <div><div className="font-semibold text-foreground">Historical magnitude</div><div className="mt-1 text-muted-foreground">{formatMove(move)} ({move >= 0 ? '+' : ''}{number.format(shockedInput - currentInput)} {factor.unit} on the affected input)</div></div>
-                  <div><div className="font-semibold text-foreground">Step 1 — Apply shock to baseline input price</div><div className="mt-1 text-muted-foreground">Current baseline price: <span className="font-mono text-foreground">{number.format(currentInput)} {factor.unit}</span> · Shocked price: <span className="font-mono text-foreground">{number.format(shockedInput)} {factor.unit}</span></div></div>
-                  <div><div className="font-semibold text-foreground">Step 2 — Recalculate production cost</div><div className="mt-1 text-muted-foreground">Base case: <span className="font-mono text-foreground">{euro.format(baseCost)}/t</span> · Scenario: <span className="font-mono text-foreground">{euro.format(scenarioCost)}/t</span> · Difference: <span className="font-mono text-foreground">{difference >= 0 ? '+' : ''}{euro.format(difference)}/t</span></div></div>
-                  <div className="border-t border-border/70 pt-3 text-muted-foreground">Result: Hypothetical projection based on historical magnitude: <span className="font-mono font-semibold text-foreground">{difference >= 0 ? '+' : ''}{euro.format(difference)}/t.</span></div>
-                </div>
-              </div>;
-            })() : <div data-testid="event-calculation-empty"><div className="label-caps text-muted-foreground">Event calculation</div><p className="mt-2 text-[11px] leading-4 text-muted-foreground">Select a historical event above and click “Apply this shock to forecast” to see the calculation.</p></div>}
-          </div>
           <div className="mt-4 label-caps text-muted-foreground">Historical events</div>
           <div className="mt-3 space-y-3">{MARKET_EVENTS.map((event) => { const move = event.factorMoves[activeKey]; const priceImpact = (input?.value ?? 0) * move / 100; const costImpact = baseCost * FACTOR_COST_SHARES[activeKey] * move / 100; const totalEventImpact = (baseCost * (0.74 * event.factorMoves.hrc + 0.08 * event.factorMoves.electricity + 0.04 * event.factorMoves.ttf + 0.02 * event.factorMoves.carbon)) / 100; const applyEvent = () => { const values = { preset: 'base' as const, energy: 86.4, hrcShift: event.factorMoves.hrc, electricityShift: event.factorMoves.electricity, gasShift: event.factorMoves.ttf, euaShift: event.factorMoves.carbon, laborShare: 7, freight: 42, freeAllocation: 85 }; setAppliedEvent({ event, values }); onApplyScenario(values, event.name); }; return <div key={event.date} className="border-l-2 border-primary/45 pl-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">{event.name}</span><span className="font-mono text-[10px] text-muted-foreground">{event.date}</span></div><div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] uppercase tracking-[.06em] text-primary"><span>{event.category}</span><span className="font-mono normal-case tracking-normal text-foreground">{formatMove(move)} · {priceImpact >= 0 ? '+' : ''}{number.format(priceImpact)} {factor.unit}</span></div><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{event.note} Estimated model effect: <span className="font-mono text-foreground">{costImpact >= 0 ? '+' : ''}{euro.format(costImpact)}/t.</span></p><button data-testid={`button-apply-event-${event.date}`} onClick={applyEvent} className="mt-2 rounded-sm border border-primary/40 bg-primary/5 px-2 py-1 text-[10px] font-semibold text-primary hover:bg-primary/10">Apply this shock to forecast</button><div className="mt-1 text-[10px] text-muted-foreground">Hypothetical projection based on historical magnitude: <span className="font-mono text-foreground">{totalEventImpact >= 0 ? '+' : ''}{euro.format(totalEventImpact)}/t.</span></div></div>; })}</div>
         </div>
@@ -1259,7 +1801,40 @@ function Home() {
   }, [modelForecast, modelBaseCost, overview, scenarioCost]);
   const seriesForChart = useMemo(() => applySeriesScenario(modelForecast.series, scenario), [modelForecast.series, scenario]);
   const exportForecast = () => {
-    const rows = [['Country', 'Week', 'Expected cost (EUR/t)', 'Lower range', 'Upper range'], ...forecastForChart.points.map((point) => [country, point.label, String(point.costPerTon), String(point.lower), String(point.upper)])];
+    const totalCost = scenarioCost ?? modelBaseCost;
+    const rawMaterialsTotal = Math.round(totalCost * 0.74);
+    const consumablesTotal = Math.round(totalCost * 0.04);
+    const utilitiesCost = Math.round(totalCost * 0.12);
+    const laborCost = Math.round(totalCost * 0.06);
+    const logisticsCost = Math.round(totalCost * 0.03);
+    const overheadCost = Math.round(totalCost * 0.01);
+    const operationsTotal = utilitiesCost + laborCost + logisticsCost + overheadCost;
+
+    const rows = [
+      ['Country', 'Week', 'Expected cost (EUR/t)', 'Lower range', 'Upper range'],
+      ...forecastForChart.points.map((point) => [country, point.label, String(point.costPerTon), String(point.lower), String(point.upper)]),
+      ['', '', '', '', ''],
+      ['COST BREAKDOWN (EUR/t)', 'Line Item', 'Cost (EUR/t)', '% of Category', '% of Total Cost'],
+      ['Raw Materials', 'Hot Rolled Coil (HRC)', String(rawMaterialsTotal), '100.0%', ((rawMaterialsTotal / totalCost) * 100).toFixed(1) + '%'],
+      ['Raw Materials', 'Zinc (LME-priced)', 'Not yet itemized', '—', '—'],
+      ['Raw Materials', 'Alloying elements (Cr/Ni)', 'Not yet itemized', '—', '—'],
+      ['Raw Materials Subtotal', 'Raw Materials Total', String(rawMaterialsTotal), '100.0%', ((rawMaterialsTotal / totalCost) * 100).toFixed(1) + '%'],
+      ['', '', '', '', ''],
+      ['Consumables', 'Conversion consumables total', String(consumablesTotal), '100.0%', ((consumablesTotal / totalCost) * 100).toFixed(1) + '%'],
+      ['Consumables', 'Pickling acids (HCl/H2SO4)', 'Bundled in conversion', '—', '—'],
+      ['Consumables', 'Rolling oils & emulsions', 'Bundled in conversion', '—', '—'],
+      ['Consumables', 'Refractories & work rolls', 'Bundled in conversion', '—', '—'],
+      ['Consumables', 'Compressed air & inert gases', 'Bundled in conversion', '—', '—'],
+      ['Consumables Subtotal', 'Consumables Total', String(consumablesTotal), '100.0%', ((consumablesTotal / totalCost) * 100).toFixed(1) + '%'],
+      ['', '', '', '', ''],
+      ['Operations & Utilities', 'Utilities & EUA carbon', String(utilitiesCost), ((utilitiesCost / operationsTotal) * 100).toFixed(1) + '%', ((utilitiesCost / totalCost) * 100).toFixed(1) + '%'],
+      ['Operations & Utilities', 'Manufacturing labour', String(laborCost), ((laborCost / operationsTotal) * 100).toFixed(1) + '%', ((laborCost / totalCost) * 100).toFixed(1) + '%'],
+      ['Operations & Utilities', 'Logistics & freight', String(logisticsCost), ((logisticsCost / operationsTotal) * 100).toFixed(1) + '%', ((logisticsCost / totalCost) * 100).toFixed(1) + '%'],
+      ['Operations & Utilities', 'Overhead + margin', String(overheadCost), ((overheadCost / operationsTotal) * 100).toFixed(1) + '%', ((overheadCost / totalCost) * 100).toFixed(1) + '%'],
+      ['Operations Subtotal', 'Operations & Utilities Total', String(operationsTotal), '100.0%', ((operationsTotal / totalCost) * 100).toFixed(1) + '%'],
+      ['', '', '', '', ''],
+      ['RECONCILED TOTAL', 'Estimated Total Production Cost', String(totalCost), '—', '100.0%'],
+    ];
     downloadCsv(`steelcost-${country.toLowerCase()}-${horizon}w.csv`, rows);
     setExported(true); window.setTimeout(() => setExported(false), 2400);
   };
@@ -1334,17 +1909,16 @@ function Home() {
       {overviewQuery.isError && !overview ? (
         <EmptyOrError error onRetry={() => overviewQuery.refetch()} />
       ) : overview ? (
-        <div className="grid gap-5 grid-cols-1 lg:grid-cols-2 xl:grid-cols-[minmax(270px,1.05fr)_minmax(270px,.95fr)_minmax(340px,1.5fr)]">
-          <MarketInputPanel overview={overview} sessionStartedAt={sessionStartedAt} />
-          <ScenarioPanel overview={overview} country={country} setCountry={handleCountryChange} onApply={setScenario} />
-          <div className="lg:col-span-2 xl:col-span-1">
-            <ContributionPanel overview={overview} baselineCost={modelBaseCost} scenarioCost={scenarioCost} sessionStartedAt={sessionStartedAt} />
+        <>
+          <div className="grid gap-5 grid-cols-1 lg:grid-cols-2">
+            <MarketInputPanel overview={overview} sessionStartedAt={sessionStartedAt} />
+            <ScenarioPanel overview={overview} country={country} setCountry={handleCountryChange} onApply={setScenario} />
           </div>
-        </div>
+          <CostAnatomySection overview={overview} baselineCost={modelBaseCost} scenarioCost={scenarioCost} sessionStartedAt={sessionStartedAt} />
+        </>
       ) : (
-        <div className="grid gap-5 grid-cols-1 lg:grid-cols-3">
+        <div className="grid gap-5 grid-cols-1 lg:grid-cols-2">
           <div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /><Skeleton className="mt-8 h-4 w-full" /><Skeleton className="mt-4 h-4 w-4/5" /><Skeleton className="mt-4 h-4 w-11/12" /></div>
-          <div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div>
           <div className="panel h-[510px] p-5"><Skeleton className="h-5 w-36" /></div>
         </div>
       )}
