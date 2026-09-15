@@ -1362,18 +1362,38 @@ function ChinaExportChart({ hrcHistory }: { hrcHistory: Array<{ label: string; v
   const rangeLength: Record<HistoricalRange, number> = { '1y': 12, '3y': 36, '5y': 45, full: CHINA_EXPORT_REFERENCE.length };
   const data = CHINA_EXPORT_REFERENCE.slice(-rangeLength[range]);
   const max = Math.max(...data.map((point) => point.value), 1);
-  const barWidth = 704 / Math.max(data.length, 1);
+  const plotLeft = 46;
+  const plotRight = 694;
+  const plotWidth = plotRight - plotLeft;
+  const barWidth = plotWidth / Math.max(data.length, 1);
   const hrcValues = data.map((point) => hrcHistory.find((item) => item.label.startsWith(point.label))?.value ?? null).filter((value): value is number => value !== null);
   const hrcMin = Math.min(...hrcValues, 0);
   const hrcMax = Math.max(...hrcValues, 1);
-  const x = (index: number) => 18 + index * barWidth + barWidth / 2;
+  const x = (index: number) => plotLeft + index * barWidth + barWidth / 2;
   const y = (value: number) => 228 - (value / max) * 180;
   const hrcY = (value: number) => 228 - ((value - hrcMin) / Math.max(hrcMax - hrcMin, 1)) * 180;
   const hrcLine = data.map((point, index) => { const value = hrcHistory.find((item) => item.label.startsWith(point.label))?.value; return value === undefined ? null : `${x(index)},${hrcY(value)}`; }).filter(Boolean).join(' ');
-  const labelIndexes = getAxisLabelIndexes(data.length, 704, 72);
+  const labelIndexes = useMemo(() => {
+    if (range === '1y') {
+      return Array.from({ length: data.length }, (_, i) => i);
+    }
+    const stride = range === '3y' ? 4 : 5;
+    const indexes: number[] = [];
+    for (let i = 0; i < data.length; i += stride) {
+      indexes.push(i);
+    }
+    if (indexes[indexes.length - 1] !== data.length - 1) {
+      if (data.length - 1 - indexes[indexes.length - 1] < 2) {
+        indexes[indexes.length - 1] = data.length - 1;
+      } else {
+        indexes.push(data.length - 1);
+      }
+    }
+    return indexes;
+  }, [range, data.length]);
   return <section data-testid="panel-china-exports" className="panel overflow-hidden">
     <div className="panel-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="label-caps text-muted-foreground">HRC market context</div><h2 className="mt-1 font-display text-base font-semibold">China Steel Export Volume</h2></div><div className="flex items-center gap-3"><FreshnessPill freshness="cached" /><div className="flex rounded-sm border border-border bg-secondary/55 p-1">{([['1y', '1 year'], ['3y', '3 years'], ['5y', '5 years'], ['full', 'Full history']] as const).map(([key, label]) => <button data-testid={`button-export-range-${key}`} key={key} onClick={() => setRange(key)} className={`rounded-sm px-2 py-1.5 text-[10px] font-semibold ${range === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{label}</button>)}</div></div></div>
-    <div className="p-5"><div className="mb-3 flex items-center gap-4 text-[10px] text-muted-foreground"><span className="flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-accent/65" />Exports · Mt</span><span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-primary" />HRC reference · €/t</span></div><svg className="h-56 w-full" viewBox="0 0 740 250" role="img" aria-label="Monthly China steel export volume with HRC reference line"><g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1="18" y1="48" x2="722" y2="48" /><line x1="18" y1="138" x2="722" y2="138" /><line x1="18" y1="228" x2="722" y2="228" /></g>{data.map((point, index) => <g key={point.label}><rect x={x(index) - Math.max(barWidth * .35, 2)} y={y(point.value)} width={Math.max(barWidth * .7, 2)} height={228 - y(point.value)} fill="hsl(var(--accent) / .55)"><title>{`${point.label}: ${point.value.toFixed(2)} Mt`}</title></rect>{labelIndexes.includes(index) && <text x={x(index)} y="244" textAnchor={index === 0 ? 'start' : index === data.length - 1 ? 'end' : 'middle'} fill="hsl(var(--muted-foreground))" fontSize="8" fontFamily="var(--app-font-mono)">{formatAxisLabel(point.label)}</text>}</g>)}{hrcLine && <polyline points={hrcLine} fill="none" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}</svg><div className="mt-3 flex items-center justify-between border-t border-border/70 pt-3 text-[11px] text-muted-foreground"><span>Reference customs data for context only</span><Link href="/assumptions" className="text-primary hover:underline">See data assumptions →</Link></div></div>
+    <div className="p-5"><div className="mb-3 flex items-center gap-4 text-[10px] text-muted-foreground"><span className="flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-accent/65" />Exports · Mt</span><span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-primary" />HRC reference · €/t</span></div><svg className="h-60 w-full" viewBox="0 0 756 268" role="img" aria-label="Monthly China steel export volume with HRC reference line"><g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1={plotLeft} y1="48" x2={plotRight} y2="48" /><line x1={plotLeft} y1="138" x2={plotRight} y2="138" /><line x1={plotLeft} y1="228" x2={plotRight} y2="228" /></g><line x1={plotLeft} y1="48" x2={plotLeft} y2="228" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />{[48, 138, 228].map((yPos) => { const val = yPos === 48 ? max : yPos === 138 ? max / 2 : 0; return <g key={`left-tick-${yPos}`}><line x1={plotLeft - 4} y1={yPos} x2={plotLeft} y2={yPos} stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" /><text x={plotLeft - 6} y={yPos + 3} textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="7">{val.toFixed(1)}</text></g>; })}<text x="12" y="138" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600" transform="rotate(-90 12 138)">STEEL EXPORTS (Mt)</text><line x1={plotRight} y1="48" x2={plotRight} y2="228" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />{[48, 138, 228].map((yPos) => { const val = yPos === 48 ? hrcMax : yPos === 138 ? (hrcMax + hrcMin) / 2 : hrcMin; return <g key={`right-tick-${yPos}`}><line x1={plotRight} y1={yPos} x2={plotRight + 4} y2={yPos} stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" /><text x={plotRight + 7} y={yPos + 3} textAnchor="start" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="7">€{Math.round(val)}</text></g>; })}<text x="744" y="138" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600" transform="rotate(90 744 138)">HRC REFERENCE PRICE (€/t)</text><line x1={plotLeft} y1="228" x2={plotRight} y2="228" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />{data.map((point, index) => <g key={point.label}><rect x={x(index) - Math.max(barWidth * .35, 2)} y={y(point.value)} width={Math.max(barWidth * .7, 2)} height={228 - y(point.value)} fill="hsl(var(--accent) / .55)"><title>{`${point.label}: ${point.value.toFixed(2)} Mt`}</title></rect></g>)}{labelIndexes.map((index) => <text key={`china-month-${data[index]?.label}`} x={x(index)} y="244" textAnchor="middle" fill="hsl(var(--muted-foreground))" fontSize="8" fontFamily="var(--app-font-mono)">{formatAxisLabel(data[index]?.label ?? '')}</text>)}<text x={(plotLeft + plotRight) / 2} y="260" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600">DATE</text>{hrcLine && <polyline points={hrcLine} fill="none" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}</svg><div className="mt-3 flex items-center justify-between border-t border-border/70 pt-3 text-[11px] text-muted-foreground"><span>Reference customs data for context only</span><Link href="/assumptions" className="text-primary hover:underline">See data assumptions →</Link></div></div>
   </section>;
 }
 
@@ -1712,10 +1732,12 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
   const dataPadding = Math.max((dataMax - dataMin) * 0.12, Math.abs(dataMax) * 0.01, 1);
   const min = dataMin - dataPadding;
   const max = dataMax + dataPadding;
-  const chartX = (index: number) => 18 + (index * 316) / Math.max(history.length - 1, 1);
+  const plotLeft = 58;
+  const plotWidth = 316;
+  const chartX = (index: number) => plotLeft + (index * plotWidth) / Math.max(history.length - 1, 1);
   const chartY = (value: number) => 116 - ((value - min) / Math.max(max - min, 1)) * 88;
   const chartPoints = history.map((point, index) => `${chartX(index)},${chartY(point.value)}`).join(' ');
-  const xLabelIndexes = getAxisLabelIndexes(history.length, 316, range === '1y' ? 58 : 72);
+  const xLabelIndexes = getAxisLabelIndexes(history.length, plotWidth, range === '1y' ? 58 : 72);
   const parsePointDate = (label: string) => label === 'Now' ? new Date() : new Date(`${label}T00:00:00Z`);
   const eventMarkers = MARKET_EVENTS.map((event) => {
     const eventTime = new Date(`${event.date}-15T00:00:00Z`).getTime();
@@ -1859,14 +1881,14 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
       <div className="grid items-start gap-5 p-5 lg:grid-cols-[1.25fr_.75fr]">
         <div className="self-start">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><div className="label-caps text-muted-foreground">{factor.label}</div><div className="data-mono mt-1 text-xl font-semibold">{number.format(latestValue)} <span className="text-xs font-normal text-muted-foreground">{factor.unit}</span></div></div><div className="flex rounded-sm border border-border bg-secondary/55 p-1">{([['1y', '1 year'], ['3y', '3 years'], ['5y', '5 years'], ['full', 'Full history']] as const).map(([key, label]) => <button data-testid={`button-history-range-${key}`} key={key} onClick={() => setRange(key)} className={`rounded-sm px-2 py-1.5 text-[10px] font-semibold ${range === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{label}</button>)}</div></div>
-          <svg className="mt-4 h-40 w-full" viewBox="0 0 340 158" role="img" aria-label={`${factor.label} historical price chart`}>
-            <line x1="18" y1="18" x2="18" y2="116" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
-            <line x1="18" y1="116" x2="334" y2="116" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
+          <svg className="mt-4 h-40 w-full" viewBox="0 0 390 162" role="img" aria-label={`${factor.label} historical price chart`}>
+            <line x1={plotLeft} y1="18" x2={plotLeft} y2="116" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
+            <line x1={plotLeft} y1="116" x2={plotLeft + plotWidth} y2="116" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
             {[18, 67, 116].map((yPosition, index) => {
               const value = max - ((max - min) * index) / 2;
               return <g key={`y-axis-${yPosition}`}>
-                <line x1="15" y1={yPosition} x2="18" y2={yPosition} stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
-                <text x="16" y={yPosition + 3} textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="7">{number.format(value)}</text>
+                <line x1={plotLeft - 4} y1={yPosition} x2={plotLeft} y2={yPosition} stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />
+                <text x={plotLeft - 6} y={yPosition + 3} textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="7">{number.format(value)}</text>
               </g>;
             })}
             <polyline points={chartPoints} fill="none" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -1880,8 +1902,8 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
               </g>;
             })}
             {xLabelIndexes.map((index) => <text key={`x-label-${index}`} x={chartX(index)} y="138" textAnchor={index === 0 ? 'start' : index === history.length - 1 ? 'end' : 'middle'} fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="8">{formatAxisLabel(history[index]?.label ?? '')}</text>)}
-            <text x="176" y="155" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600">DATE</text>
-            <text x="2" y="67" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600" transform="rotate(-90 2 67)">VALUE</text>
+            <text x={plotLeft + plotWidth / 2} y="155" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600">DATE</text>
+            <text x="14" y="67" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600" transform="rotate(-90 14 67)">Price ({factor.unit})</text>
           </svg>
           <div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>{history[0]?.label}</span><span>Latest</span></div>
 
