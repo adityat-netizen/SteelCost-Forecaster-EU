@@ -57,6 +57,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { LiveIndicator } from '@/components/live-indicator';
+import { GroupedSignalsIndicator } from '@/components/grouped-signals-indicator';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -241,17 +242,18 @@ function getOverviewForCountry(country: Country): MarketOverview {
   };
 }
 
-const GERMANY_FORECAST_POINTS = [
-  { week: 0, label: 'Now', costPerTon: 1048, lower: 1026, upper: 1072 },
-  { week: 1, label: 'Wk 09', costPerTon: 1054, lower: 1026, upper: 1084 },
-  { week: 2, label: 'Wk 10', costPerTon: 1061, lower: 1027, upper: 1097 },
-  { week: 3, label: 'Wk 11', costPerTon: 1057, lower: 1018, upper: 1096 },
-  { week: 4, label: 'Wk 12', costPerTon: 1070, lower: 1020, upper: 1120 },
-  { week: 5, label: 'Wk 13', costPerTon: 1082, lower: 1024, upper: 1140 },
-  { week: 6, label: 'Wk 14', costPerTon: 1076, lower: 1013, upper: 1142 },
-  { week: 7, label: 'Wk 15', costPerTon: 1091, lower: 1018, upper: 1164 },
-  { week: 8, label: 'Wk 16', costPerTon: 1102, lower: 1021, upper: 1183 },
-];
+const GERMANY_FORECAST_POINTS = Array.from({ length: 27 }, (_, week) => {
+  const trend = 1 + week * 0.0024 + Math.sin(week * 0.82) * 0.006;
+  const uncertainty = 0.018 + week * 0.0065;
+  const costPerTon = Math.round(1048 * trend);
+  return {
+    week,
+    label: week === 0 ? 'Now' : `W${week}`,
+    costPerTon,
+    lower: Math.round(costPerTon * (1 - uncertainty)),
+    upper: Math.round(costPerTon * (1 + uncertainty)),
+  };
+});
 
 function buildFallbackSeries(country: Country): SeriesForecast[] {
   const adj = COUNTRY_ADJUSTMENTS[country];
@@ -301,7 +303,7 @@ function buildFallbackSeries(country: Country): SeriesForecast[] {
 
 const FALLBACK_FORECAST: MarketForecast = {
   country: 'Germany',
-  horizon: 8,
+  horizon: 26,
   backtest: {
     generatedAt: '2026-09-03T06:00:00.000Z',
     sampleWindow: 'Rolling target dates; only matured forecasts with complete source observations are included.',
@@ -325,18 +327,16 @@ const FALLBACK_FORECAST: MarketForecast = {
 
 function getForecastForCountry(country: Country, horizon: number): MarketForecast {
   const baseCost = getCountryBaseCost(country);
-  const ratio = baseCost / 1048;
-
-  const targetCount = Math.min(horizon + 1, GERMANY_FORECAST_POINTS.length);
-  const points = GERMANY_FORECAST_POINTS.slice(0, targetCount).map((p) => {
-    const costPerTon = Math.round(p.costPerTon * ratio);
-    const lower = Math.round(p.lower * ratio);
-    const upper = Math.round(p.upper * ratio);
+  const points = Array.from({ length: horizon + 1 }, (_, week) => {
+    const trend = 1 + week * 0.0024 + Math.sin(week * 0.82) * 0.006;
+    const uncertainty = 0.018 + week * 0.0065;
+    const costPerTon = Math.round(baseCost * trend);
     return {
-      ...p,
+      week,
+      label: week === 0 ? 'Now' : `W${week}`,
       costPerTon,
-      lower,
-      upper,
+      lower: Math.round(costPerTon * (1 - uncertainty)),
+      upper: Math.round(costPerTon * (1 + uncertainty)),
     };
   });
 
@@ -432,8 +432,8 @@ function formatDate(value: string) {
 }
 
 function formatAxisLabel(value: string) {
-  const weekMatch = value.match(/^W[-+]?(\d+)$/i);
-  if (weekMatch) return `Week ${weekMatch[1]}`;
+  const weekMatch = value.match(/^W(?:k)?[-+\s]?(\d+)$/i);
+  if (weekMatch) return `Wk ${parseInt(weekMatch[1], 10)}`;
   const parsed = new Date(`${value.length === 7 ? `${value}-01` : value}T00:00:00Z`);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
 }
@@ -934,10 +934,7 @@ function RawMaterialsCard({ total, overview, sessionStartedAt }: { total: number
 
           <div className="mt-5 border-t border-border/70 pt-4">
             <div className="mb-2 label-caps text-muted-foreground">Signals used in this view</div>
-            <div className="flex flex-wrap gap-2">
-              {hrcInput && <LiveIndicator input={hrcInput} sessionStartedAt={sessionStartedAt} />}
-              {zincInput && <LiveIndicator input={zincInput} sessionStartedAt={sessionStartedAt} />}
-            </div>
+            <GroupedSignalsIndicator inputs={[hrcInput, zincInput]} sessionStartedAt={sessionStartedAt} />
           </div>
         </div>
       </div>
@@ -1076,12 +1073,7 @@ function ConsumablesCard({ total, overview, sessionStartedAt }: { total: number;
 
           <div className="mt-5 border-t border-border/70 pt-4">
             <div className="mb-2 label-caps text-muted-foreground">Signals used in this view</div>
-            <div className="flex flex-wrap gap-2">
-              {picklingInput && <LiveIndicator input={picklingInput} sessionStartedAt={sessionStartedAt} />}
-              {rollingOilInput && <LiveIndicator input={rollingOilInput} sessionStartedAt={sessionStartedAt} />}
-              {workRollsInput && <LiveIndicator input={workRollsInput} sessionStartedAt={sessionStartedAt} />}
-              {compressedAirInput && <LiveIndicator input={compressedAirInput} sessionStartedAt={sessionStartedAt} />}
-            </div>
+            <GroupedSignalsIndicator inputs={[picklingInput, rollingOilInput, workRollsInput, compressedAirInput]} sessionStartedAt={sessionStartedAt} />
           </div>
         </div>
       </div>
@@ -1215,11 +1207,7 @@ function OperationsCard({
 
           <div className="mt-5 border-t border-border/70 pt-4">
             <div className="mb-2 label-caps text-muted-foreground">Signals used in this view</div>
-            <div className="flex flex-wrap gap-2">
-              {signalInputs.map((input) => (
-                <LiveIndicator key={input.key} input={input} sessionStartedAt={sessionStartedAt} />
-              ))}
-            </div>
+            <GroupedSignalsIndicator inputs={signalInputs} sessionStartedAt={sessionStartedAt} />
           </div>
         </div>
       </div>
@@ -1327,9 +1315,15 @@ function CostDriverTrend({ series, baselineCost }: { series: SeriesForecast[]; b
       return { label: bucketPoints[Math.floor(bucketPoints.length / 2)]?.label ?? '', shares: specs.map((_, layer) => bucketPoints.reduce((sum, point) => sum + (point.shares[layer] ?? 0), 0) / bucketPoints.length) };
     })
     : points;
-  const x = (index: number) => 18 + (index * 704) / Math.max(display.length - 1, 1);
-  const y = (share: number) => 228 - share * 196;
-  const labelIndexes = getAxisLabelIndexes(display.length, 704, 72);
+  const plotLeft = 82;
+  const plotRight = 726;
+  const plotWidth = plotRight - plotLeft;
+  const plotTop = 36;
+  const plotBottom = 216;
+  const plotHeight = plotBottom - plotTop;
+  const x = (index: number) => plotLeft + (index * plotWidth) / Math.max(display.length - 1, 1);
+  const y = (share: number) => plotBottom - share * plotHeight;
+  const labelIndexes = getAxisLabelIndexes(display.length, plotWidth, 72);
   const areas = specs.map((spec, layer) => {
     const upper = display.map((point, index) => {
       const cumulative = point.shares.slice(0, layer + 1).reduce((sum, value) => sum + value, 0);
@@ -1348,7 +1342,7 @@ function CostDriverTrend({ series, baselineCost }: { series: SeriesForecast[]; b
       <div className="flex items-center gap-3"><FreshnessPill freshness="estimated" /><div className="flex rounded-sm border border-border bg-secondary/55 p-1">{([['1y', '1 year'], ['3y', '3 years'], ['5y', '5 years'], ['full', 'Full history']] as const).map(([key, label]) => <button data-testid={`button-driver-range-${key}`} key={key} onClick={() => setRange(key)} className={`rounded-sm px-2 py-1.5 text-[10px] font-semibold ${range === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{label}</button>)}</div></div>
     </div>
     <div className="p-5">
-      {display.length ? <><div className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-muted-foreground">{areas.map(({ spec }) => <span key={spec.key} className="flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm" style={{ backgroundColor: spec.color }} />{spec.label}</span>)}</div><svg className="h-56 w-full" viewBox="0 0 740 250" role="img" aria-label="Estimated cost driver shares over time"><g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1="18" y1="32" x2="722" y2="32" /><line x1="18" y1="130" x2="722" y2="130" /><line x1="18" y1="228" x2="722" y2="228" /></g>{areas.map(({ spec, points: area }) => <polygon key={spec.key} points={area} fill={spec.color} fillOpacity=".72" stroke="hsl(var(--card))" strokeWidth="1" />)}<text x="18" y="18" fill="hsl(var(--muted-foreground))" fontSize="9" fontFamily="var(--app-font-mono)">100%</text><text x="18" y="244" fill="hsl(var(--muted-foreground))" fontSize="9" fontFamily="var(--app-font-mono)">0%</text>{labelIndexes.map((index) => <text key={`driver-label-${index}`} x={x(index)} y="246" textAnchor={index === 0 ? 'start' : index === display.length - 1 ? 'end' : 'middle'} fill="hsl(var(--muted-foreground))" fontSize="8" fontFamily="var(--app-font-mono)">{formatAxisLabel(display[index]?.label ?? '')}</text>)}</svg></> : <div className="py-10 text-sm text-muted-foreground">Historical cost-driver coverage is not available yet.</div>}
+      {display.length ? <><div className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-muted-foreground">{areas.map(({ spec }) => <span key={spec.key} className="flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm" style={{ backgroundColor: spec.color }} />{spec.label}</span>)}</div><svg className="h-60 w-full" viewBox="0 0 756 268" role="img" aria-label="Estimated cost driver shares over time"><g stroke="hsl(var(--border) / .55)" strokeDasharray="2 5"><line x1={plotLeft} y1={plotTop} x2={plotRight} y2={plotTop} /><line x1={plotLeft} y1={(plotTop + plotBottom) / 2} x2={plotRight} y2={(plotTop + plotBottom) / 2} /><line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotBottom} /></g>{areas.map(({ spec, points: area }) => <polygon key={spec.key} points={area} fill={spec.color} fillOpacity=".72" stroke="hsl(var(--card))" strokeWidth="1" />)}<line x1={plotLeft} y1={plotTop} x2={plotLeft} y2={plotBottom} stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" /><line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotBottom} stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" />{[ { yPos: plotTop, label: '100%' }, { yPos: (plotTop + plotBottom) / 2, label: '50%' }, { yPos: plotBottom, label: '0%' } ].map(({ yPos, label }) => <g key={`driver-tick-${label}`}><line x1={plotLeft - 4} y1={yPos} x2={plotLeft} y2={yPos} stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="1.2" /><text x={plotLeft - 10} y={yPos + 3} textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="9">{label}</text></g>)}<text x="18" y={(plotTop + plotBottom) / 2} textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="9.5" fontWeight="600" transform={`rotate(-90 18 ${(plotTop + plotBottom) / 2})`}>Share of Total Production Cost (%)</text>{labelIndexes.map((index) => <text key={`driver-label-${index}`} x={x(index)} y="236" textAnchor={index === 0 ? 'start' : index === display.length - 1 ? 'end' : 'middle'} fill="hsl(var(--muted-foreground))" fontSize="9" fontFamily="var(--app-font-mono)">{formatAxisLabel(display[index]?.label ?? '')}</text>)}<text x={(plotLeft + plotRight) / 2} y="256" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="9.5" fontWeight="600">DATE</text></svg></> : <div className="py-10 text-sm text-muted-foreground">Historical cost-driver coverage is not available yet.</div>}
       <div className="mt-3 flex items-center justify-between border-t border-border/70 pt-3 text-[11px] text-muted-foreground">
         <span>Historical cost mix</span>
         <Link href="/assumptions" className="text-primary hover:underline">See calculation methodology →</Link>
@@ -1403,12 +1397,25 @@ function ForecastChart({ forecast, inputs, sessionStartedAt, isRecalculating = f
     const values = points.flatMap((point) => [point.lower, point.upper]);
     const min = Math.min(...values) - 10;
     const max = Math.max(...values) + 10;
-    const x = (index: number) => 24 + (index * 712) / Math.max(points.length - 1, 1);
-    const y = (value: number) => 228 - ((value - min) / (max - min)) * 196;
+    const plotLeft = 56;
+    const plotRight = 736;
+    const plotWidth = plotRight - plotLeft;
+    const plotTop = 32;
+    const plotBottom = 228;
+    const plotHeight = plotBottom - plotTop;
+    const x = (index: number) => plotLeft + (index * plotWidth) / Math.max(points.length - 1, 1);
+    const y = (value: number) => plotBottom - ((value - min) / (max - min)) * plotHeight;
     const line = points.map((point, index) => `${x(index)},${y(point.costPerTon)}`).join(' ');
     const upper = points.map((point, index) => `${x(index)},${y(point.upper)}`).join(' ');
     const lower = [...points].reverse().map((point, index) => `${x(points.length - 1 - index)},${y(point.lower)}`).join(' ');
-    return { points, line, band: `${upper} ${lower}`, x, y, min, max, labelIndexes: getAxisLabelIndexes(points.length, 712, 78) };
+    const labelIndexes = points.length === 27
+      ? [0, 4, 8, 12, 16, 20, 26]
+      : points.length === 13
+        ? [0, 2, 4, 6, 8, 10, 12]
+        : points.length === 5
+          ? [0, 1, 2, 3, 4]
+          : getAxisLabelIndexes(points.length, plotWidth, 88);
+    return { points, line, band: `${upper} ${lower}`, x, y, min, max, labelIndexes, plotLeft, plotRight, plotTop, plotBottom };
   }, [forecast]);
   return (
     <section className="panel overflow-hidden">
@@ -1428,7 +1435,10 @@ function ForecastChart({ forecast, inputs, sessionStartedAt, isRecalculating = f
         <div className="mb-2 flex items-start justify-between"><div><div className="data-mono text-2xl font-semibold">{euro.format(chart.points[0]?.costPerTon ?? 0)}<span className="ml-1 text-xs font-normal text-muted-foreground">/ t today</span></div><div className="mt-1 flex items-center gap-1 text-xs text-destructive"><ArrowUpRight size={13} />{chart.points.length > 1 ? `${euro.format((chart.points.at(-1)?.costPerTon ?? 0) - (chart.points[0]?.costPerTon ?? 0))} by horizon` : 'Awaiting horizon'}</div></div><div className="rounded-sm border border-border bg-secondary/45 px-3 py-2 text-right"><div className="label-caps text-muted-foreground">30-day error</div><div data-testid="text-backtest-score" className="data-mono mt-1 text-sm font-semibold text-accent">{forecast.backtest.rolling30.meanAbsolutePercentageError === null ? 'Awaiting' : `${forecast.backtest.rolling30.meanAbsolutePercentageError.toFixed(1)}%`}</div></div></div>
         <div className={`w-full overflow-hidden transition-opacity duration-200 ${isRecalculating ? 'opacity-50' : 'opacity-100'}`}>
           <svg data-testid="chart-forecast" className="mt-3 h-auto w-full max-w-full" viewBox="0 0 760 280" role="img" aria-label="Forecast cost chart with uncertainty range">
-            <g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1="24" y1="32" x2="736" y2="32" /><line x1="24" y1="98" x2="736" y2="98" /><line x1="24" y1="164" x2="736" y2="164" /><line x1="24" y1="228" x2="736" y2="228" /></g>
+            <g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1={chart.plotLeft} y1="32" x2={chart.plotRight} y2="32" /><line x1={chart.plotLeft} y1="98" x2={chart.plotRight} y2="98" /><line x1={chart.plotLeft} y1="164" x2={chart.plotRight} y2="164" /><line x1={chart.plotLeft} y1="228" x2={chart.plotRight} y2="228" /></g>
+            <line x1={chart.plotLeft} y1="32" x2={chart.plotLeft} y2="228" stroke="hsl(var(--muted-foreground) / .4)" strokeWidth="1" />
+            <line x1={chart.plotLeft} y1="228" x2={chart.plotRight} y2="228" stroke="hsl(var(--muted-foreground) / .4)" strokeWidth="1" />
+            <text x="16" y={(chart.plotTop + chart.plotBottom) / 2} textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600" transform={`rotate(-90 16 ${(chart.plotTop + chart.plotBottom) / 2})`}>Estimated Production Cost (€/t)</text>
             <polygon points={chart.band} fill="hsl(var(--accent) / .13)" />
             <polyline points={chart.line} fill="none" stroke="hsl(var(--primary))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
             {chart.points.map((point, index) => {
@@ -1436,7 +1446,7 @@ function ForecastChart({ forecast, inputs, sessionStartedAt, isRecalculating = f
                 <g key={point.week}>
                   <circle cx={chart.x(index)} cy={chart.y(point.costPerTon)} r={index === 0 ? 5 : 3.5} fill="hsl(var(--card))" stroke="hsl(var(--primary))" strokeWidth="2.5" />
                   {chart.labelIndexes.includes(index) && (
-                    <text x={chart.x(index)} y="252" textAnchor={index === 0 ? 'start' : index === chart.points.length - 1 ? 'end' : 'middle'} fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="9">
+                    <text x={chart.x(index)} y="248" textAnchor={index === 0 ? 'start' : index === chart.points.length - 1 ? 'end' : 'middle'} fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="8">
                       {formatAxisLabel(point.label)}
                     </text>
                   )}
@@ -1448,12 +1458,13 @@ function ForecastChart({ forecast, inputs, sessionStartedAt, isRecalculating = f
                 </g>
               );
             })}
-            <text x="736" y="26" textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="9">{euro.format(chart.max)}</text>
-            <text x="736" y="224" textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="9">{euro.format(chart.min)}</text>
+            <text x={(chart.plotLeft + chart.plotRight) / 2} y="268" textAnchor="middle" fill="hsl(var(--foreground))" fontFamily="var(--app-font-mono)" fontSize="8" fontWeight="600">PLANNING HORIZON</text>
+            <text x={chart.plotRight} y="26" textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="9">{euro.format(chart.max)}</text>
+            <text x={chart.plotRight} y="224" textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="9">{euro.format(chart.min)}</text>
           </svg>
         </div>
         <div className="mt-1 flex items-center justify-between border-t border-border/70 pt-3 text-[11px] text-muted-foreground">
-          <span>26-week horizon planning signal</span>
+          <span>{forecast.horizon === 26 ? '26-week (6-month)' : `${forecast.horizon}-week`} horizon planning signal</span>
           <Link href="/assumptions" className="text-primary hover:underline">See data assumptions →</Link>
         </div>
       </div>
@@ -1467,23 +1478,68 @@ function SeriesCard({ series }: { series: SeriesForecast }) {
   const allValues = [...history.map((point) => point.value), ...forecast.map((point) => point.upper), ...forecast.map((point) => point.lower)];
   const min = Math.min(...allValues) - 1;
   const max = Math.max(...allValues) + 1;
+  const plotLeft = 46;
+  const plotRight = 340;
+  const plotWidth = plotRight - plotLeft;
+  const plotTop = 18;
+  const plotBottom = 106;
+  const plotHeight = plotBottom - plotTop;
   const totalPoints = history.length + Math.max(forecast.length - 1, 1);
-  const x = (index: number) => 18 + (index * 316) / Math.max(totalPoints - 1, 1);
-  const y = (value: number) => 116 - ((value - min) / Math.max(max - min, 1)) * 88;
+  const x = (index: number) => plotLeft + (index * plotWidth) / Math.max(totalPoints - 1, 1);
+  const y = (value: number) => plotBottom - ((value - min) / Math.max(max - min, 1)) * plotHeight;
   const historyLine = history.map((point, index) => `${x(index)},${y(point.value)}`).join(' ');
   const forecastLine = forecast.map((point, index) => `${x(history.length - 1 + index)},${y(point.value)}`).join(' ');
   const band = `${forecast.map((point, index) => `${x(history.length - 1 + index)},${y(point.upper)}`).join(' ')} ${[...forecast].reverse().map((point, index) => `${x(history.length - 1 + forecast.length - 1 - index)},${y(point.lower)}`).join(' ')}`;
-  const labelIndexes = getAxisLabelIndexes(totalPoints, 316, 72);
+  const labelIndexes = getAxisLabelIndexes(totalPoints, plotWidth, 72);
+
+  const getCalendarLabel = (index: number) => {
+    if (index < history.length) {
+      const lbl = history[index]?.label ?? '';
+      if (lbl === 'Now') {
+        return new Date().toISOString().slice(0, 7);
+      }
+      return lbl;
+    }
+    const forecastWeek = index - (history.length - 1);
+    const targetDate = new Date(Date.now() + forecastWeek * 7 * 86_400_000);
+    return targetDate.toISOString().slice(0, 7);
+  };
+
+  const yTicks = [
+    { yPos: plotTop, val: max },
+    { yPos: (plotTop + plotBottom) / 2, val: (max + min) / 2 },
+    { yPos: plotBottom, val: min },
+  ];
+
   return (
     <div data-testid={`card-series-${series.key}`} className="rounded-sm border border-border bg-secondary/25 p-4">
       <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold">{series.label}</div><div className="mt-1 text-[10px] text-muted-foreground">{series.model} · {series.provenanceKind.replace('_', ' ')}</div></div><span className="font-mono text-[10px] text-muted-foreground">{series.unit}</span></div>
-      <svg className="mt-4 h-32 w-full" viewBox="0 0 340 142" role="img" aria-label={`${series.label} historical and 26-week forecast`}>
-        <g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5"><line x1="18" y1="28" x2="334" y2="28" /><line x1="18" y1="72" x2="334" y2="72" /><line x1="18" y1="116" x2="334" y2="116" /></g>
+      <svg className="mt-3 h-36 w-full" viewBox="0 0 350 144" role="img" aria-label={`${series.label} historical and 26-week forecast`}>
+        <g stroke="hsl(var(--border) / .65)" strokeDasharray="2 5">
+          <line x1={plotLeft} y1={plotTop} x2={plotRight} y2={plotTop} />
+          <line x1={plotLeft} y1={(plotTop + plotBottom) / 2} x2={plotRight} y2={(plotTop + plotBottom) / 2} />
+          <line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotBottom} />
+        </g>
+        <line x1={plotLeft} y1={plotTop} x2={plotLeft} y2={plotBottom} stroke="hsl(var(--muted-foreground) / .4)" strokeWidth="1" />
+        <line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotBottom} stroke="hsl(var(--muted-foreground) / .4)" strokeWidth="1" />
+        {yTicks.map(({ yPos, val }, i) => (
+          <g key={`series-tick-${i}`}>
+            <line x1={plotLeft - 3} y1={yPos} x2={plotLeft} y2={yPos} stroke="hsl(var(--muted-foreground) / .6)" strokeWidth="1" />
+            <text x={plotLeft - 6} y={yPos + 2.5} textAnchor="end" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="7">{Math.round(val)}</text>
+          </g>
+        ))}
+        <text x="10" y={(plotTop + plotBottom) / 2} textAnchor="middle" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="7" fontWeight="600" transform={`rotate(-90 10 ${(plotTop + plotBottom) / 2})`}>{series.unit}</text>
         <polygon points={band} fill="hsl(var(--accent) / .13)" />
         <polyline points={historyLine} fill="none" stroke="hsl(var(--muted-foreground) / .7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         <polyline points={forecastLine} fill="none" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-        <line x1={x(history.length - 1)} y1="16" x2={x(history.length - 1)} y2="124" stroke="hsl(var(--primary) / .45)" strokeDasharray="3 3" />
-        {labelIndexes.map((index) => <text key={`series-label-${index}`} x={x(index)} y="137" textAnchor={index === 0 ? 'start' : index === totalPoints - 1 ? 'end' : 'middle'} fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="8">{index === history.length - 1 ? 'Now' : formatAxisLabel(index < history.length ? history[index]?.label ?? '' : forecast[index - history.length]?.label ?? '')}</text>)}
+        <line x1={x(history.length - 1)} y1={plotTop - 4} x2={x(history.length - 1)} y2={plotBottom} stroke="hsl(var(--primary) / .45)" strokeDasharray="3 3" />
+        <text x={x(history.length - 1)} y={plotTop - 6} textAnchor="middle" fill="hsl(var(--primary))" fontFamily="var(--app-font-mono)" fontSize="6.5" fontWeight="600">Now</text>
+        {labelIndexes.map((index) => (
+          <text key={`series-label-${index}`} x={x(index)} y="122" textAnchor={index === 0 ? 'start' : index === totalPoints - 1 ? 'end' : 'middle'} fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="7.5">
+            {formatAxisLabel(getCalendarLabel(index))}
+          </text>
+        ))}
+        <text x={(plotLeft + plotRight) / 2} y="136" textAnchor="middle" fill="hsl(var(--muted-foreground))" fontFamily="var(--app-font-mono)" fontSize="7" fontWeight="600">DATE</text>
       </svg>
     </div>
   );
@@ -1513,17 +1569,50 @@ function BacktestEvidence({ backtest }: { backtest: MarketBacktest }) {
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Database size={14} className="text-accent" />{backtest.observationCount} resolved observations · rolling 90 days</div>
       </div>
       <div className="grid gap-3 p-5 md:grid-cols-2">
-        {windows.map((window) => (
-          <div data-testid={`backtest-window-${window.windowDays}`} key={window.windowDays} className="rounded-sm border border-border bg-secondary/35 p-4">
-            <div className="flex items-start justify-between gap-3"><div><div className="label-caps text-muted-foreground">Rolling {window.windowDays}-day window</div><div className="mt-1 text-[11px] text-muted-foreground">{dateRange(window.windowStart, window.windowEnd)}</div></div><span className={`rounded-sm px-2 py-1 font-mono text-[10px] ${window.status === 'ready' ? 'bg-accent/10 text-accent' : 'bg-primary/10 text-primary'}`}>{window.status === 'ready' ? 'Measured' : 'Building'}</span></div>
-            <div className="mt-5 grid grid-cols-3 gap-3">
-              <div><div className="label-caps text-muted-foreground">MAPE</div><div className="data-mono mt-1 text-lg font-semibold">{window.meanAbsolutePercentageError === null ? '—' : `${window.meanAbsolutePercentageError.toFixed(1)}%`}</div></div>
-              <div><div className="label-caps text-muted-foreground">Median</div><div className="data-mono mt-1 text-lg font-semibold">{window.medianAbsolutePercentageError === null ? '—' : `${window.medianAbsolutePercentageError.toFixed(1)}%`}</div></div>
-              <div><div className="label-caps text-muted-foreground">In band</div><div className="data-mono mt-1 text-lg font-semibold">{window.bandCoveragePercent === null ? '—' : `${window.bandCoveragePercent.toFixed(0)}%`}</div></div>
+        {windows.map((window) => {
+          const firstExpectedDate = formatDate(new Date(new Date(window.windowEnd).getTime() + 7 * 86_400_000).toISOString());
+          const isPending = window.meanAbsolutePercentageError === null;
+          return (
+            <div data-testid={`backtest-window-${window.windowDays}`} key={window.windowDays} className="rounded-sm border border-border bg-secondary/35 p-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="label-caps text-muted-foreground">Rolling {window.windowDays}-day window</div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">{dateRange(window.windowStart, window.windowEnd)}</div>
+                  </div>
+                  <span
+                    title={window.status === 'ready' ? 'Accuracy metrics derived from observed market settlements.' : 'This window is actively collecting weekly forecasts. Accuracy metrics will appear automatically once at least 3 forecasts reach their target date.'}
+                    className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-1 font-mono text-[10px] cursor-help ${window.status === 'ready' ? 'bg-accent/10 text-accent' : 'bg-primary/10 text-primary'}`}
+                  >
+                    {window.status !== 'ready' && <Clock3 size={10} className="shrink-0" />}
+                    {window.status === 'ready' ? 'Measured' : 'Building'}
+                  </span>
+                </div>
+                <div className="mt-5 grid grid-cols-3 gap-3">
+                  <div><div className="label-caps text-muted-foreground">MAPE</div><div className="data-mono mt-1 text-lg font-semibold">{window.meanAbsolutePercentageError === null ? '—' : `${window.meanAbsolutePercentageError.toFixed(1)}%`}</div></div>
+                  <div><div className="label-caps text-muted-foreground">Median</div><div className="data-mono mt-1 text-lg font-semibold">{window.medianAbsolutePercentageError === null ? '—' : `${window.medianAbsolutePercentageError.toFixed(1)}%`}</div></div>
+                  <div><div className="label-caps text-muted-foreground">In band</div><div className="data-mono mt-1 text-lg font-semibold">{window.bandCoveragePercent === null ? '—' : `${window.bandCoveragePercent.toFixed(0)}%`}</div></div>
+                </div>
+                {isPending && (
+                  <div className="mt-3 rounded-sm border border-border/60 bg-secondary/50 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                    <span className="font-semibold text-foreground/85">Pending evaluation:</span> Metrics populate automatically once weekly forecasts generated within this window reach their target date and can be checked against published market settlements.
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 border-t border-border/70 pt-3 space-y-1.5 text-[11px] text-muted-foreground">
+                <div>{window.observationCount} matured forecast outcome{window.observationCount === 1 ? '' : 's'} in sample</div>
+                {isPending && (
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <Clock3 size={12} className="text-primary shrink-0" />
+                    <span>
+                      First matured outcome expected: <span className="font-medium text-foreground">{firstExpectedDate}</span> — {window.windowDays === 30 ? 'the 30-day window is the fastest to populate' : 'accumulating broader sample over 90 days'}.
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="mt-4 border-t border-border/70 pt-3 text-[11px] text-muted-foreground">{window.observationCount} matured forecast outcome{window.observationCount === 1 ? '' : 's'} in sample</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <div className="flex items-center justify-between border-t border-border/70 px-5 py-3 text-[11px] text-muted-foreground">
         <span>Historical forecast accuracy tracking</span>
