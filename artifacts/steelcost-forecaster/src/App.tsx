@@ -578,7 +578,7 @@ function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-function PageIntro({ onExportCsv, onExportSeries, onExportPdf, onRefresh, refreshing, exported }: { onExportCsv: () => void; onExportSeries: () => void; onExportPdf: () => void; onRefresh: () => void; refreshing: boolean; exported: boolean }) {
+function PageIntro({ onExportCsv, onExportSeries, onExportPdf, onRefresh, refreshing, exported, activeSeriesLabel }: { onExportCsv: () => void; onExportSeries: () => void; onExportPdf: () => void; onRefresh: () => void; refreshing: boolean; exported: boolean; activeSeriesLabel?: string }) {
   return (
     <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end">
       <div>
@@ -593,7 +593,7 @@ function PageIntro({ onExportCsv, onExportSeries, onExportPdf, onRefresh, refres
         <button data-testid="button-export-pdf" onClick={onExportPdf} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-card px-3 sm:px-4 text-xs font-bold text-foreground shadow-sm hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary whitespace-nowrap">
           <Printer size={15} /> Save PDF
         </button>
-        <button data-testid="button-export-series" onClick={onExportSeries} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-card px-3 sm:px-4 text-xs font-bold text-foreground shadow-sm hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary whitespace-nowrap">
+        <button data-testid="button-export-series" onClick={onExportSeries} title={activeSeriesLabel ? `Export forecast CSV for ${activeSeriesLabel}` : 'Export Series CSV'} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-card px-3 sm:px-4 text-xs font-bold text-foreground shadow-sm hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary whitespace-nowrap">
           <Download size={15} /> Series CSV
         </button>
         <button data-testid="button-export-csv" onClick={onExportCsv} className="group inline-flex h-10 items-center justify-center gap-2 rounded-sm bg-primary px-3 sm:px-4 text-xs font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:bg-primary/90 whitespace-nowrap">
@@ -1785,9 +1785,39 @@ function ForecastModelSelector({ model, onChange }: { model: ForecastModel; onCh
   );
 }
 
-function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyScenario }: { series: SeriesForecast[]; inputs: MarketInput[]; baseCost: number; refreshedAt: number; onApplyScenario: (values: ScenarioValues, eventName: string) => void }) {
-  const [activeKey, setActiveKey] = useState<HistoricalFactorKey>('hrc');
-  const [range, setRange] = useState<HistoricalRange>('full');
+function HistoricalPricesPanel({
+  series,
+  inputs,
+  baseCost,
+  refreshedAt,
+  onApplyScenario,
+  activeKey: controlledActiveKey,
+  onActiveKeyChange,
+  range: controlledRange,
+  onRangeChange,
+}: {
+  series: SeriesForecast[];
+  inputs: MarketInput[];
+  baseCost: number;
+  refreshedAt: number;
+  onApplyScenario: (values: ScenarioValues, eventName: string) => void;
+  activeKey?: HistoricalFactorKey;
+  onActiveKeyChange?: (key: HistoricalFactorKey) => void;
+  range?: HistoricalRange;
+  onRangeChange?: (range: HistoricalRange) => void;
+}) {
+  const [internalActiveKey, setInternalActiveKey] = useState<HistoricalFactorKey>('hrc');
+  const [internalRange, setInternalRange] = useState<HistoricalRange>('full');
+  const activeKey = controlledActiveKey ?? internalActiveKey;
+  const setActiveKey = (key: HistoricalFactorKey) => {
+    setInternalActiveKey(key);
+    onActiveKeyChange?.(key);
+  };
+  const range = controlledRange ?? internalRange;
+  const setRange = (r: HistoricalRange) => {
+    setInternalRange(r);
+    onRangeChange?.(r);
+  };
   const [appliedEvent, setAppliedEvent] = useState<{ event: typeof MARKET_EVENTS[number]; values: ScenarioValues } | null>(null);
   const factor = HISTORICAL_FACTORS.find((item) => item.key === activeKey) ?? HISTORICAL_FACTORS[0];
   const activeSeries = series.find((item) => item.key === activeKey);
@@ -1915,8 +1945,8 @@ function HistoricalPricesPanel({ series, inputs, baseCost, refreshedAt, onApplyS
   }, [visibleHistory]);
 
   const downloadHistory = () => {
-    const rows = [['Factor', 'Period', 'Historical value', 'Unit'], ...fullHistory.map((point) => [factor.label, point.label, String(point.value), factor.unit.replaceAll('€', 'EUR')])];
-    downloadCsv(`steelcost-${activeKey}-historical-prices.csv`, rows);
+    const rows = [['Factor', 'Period', 'Historical value', 'Unit'], ...visibleHistory.map((point) => [factor.label, point.label, String(point.value), factor.unit.replaceAll('€', 'EUR')])];
+    downloadCsv(`steelcost-${activeKey}-historical-prices-${range}.csv`, rows);
   };
 
   const downloadRangeStatsCsv = () => {
@@ -2164,6 +2194,8 @@ function Home() {
   const [horizon, setHorizon] = useState(26);
   const [forecastModel, setForecastModel] = useState<ForecastModel>('auto');
   const [scenario, setScenario] = useState<ScenarioValues | null>(null);
+  const [selectedSeriesKey, setSelectedSeriesKey] = useState<HistoricalFactorKey>('hrc');
+  const [historicalRange, setHistoricalRange] = useState<HistoricalRange>('full');
   const [exported, setExported] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
@@ -2253,21 +2285,30 @@ function Home() {
     setExported(true); window.setTimeout(() => setExported(false), 2400);
   };
   const exportSeries = () => {
-    seriesForChart.forEach((series) => {
-      const rows = [['Date', 'Value', 'Lower', 'Upper', 'model_used'], ...series.points.map((point) => [
-        new Date(Date.now() + point.week * 7 * 86_400_000).toISOString().slice(0, 10),
-        String(point.value),
-        String(point.lower),
-        String(point.upper),
-        series.model,
-      ])];
-      downloadCsv(`steelcost-${country.toLowerCase()}-${series.key}-${horizon}w.csv`, rows);
-    });
+    const targetSeries = seriesForChart.find((s) => s.key === selectedSeriesKey) ?? seriesForChart[0];
+    if (!targetSeries) return;
+    const rows = [['Date', 'Value', 'Lower', 'Upper', 'model_used'], ...targetSeries.points.map((point) => [
+      new Date(Date.now() + point.week * 7 * 86_400_000).toISOString().slice(0, 10),
+      String(point.value),
+      String(point.lower),
+      String(point.upper),
+      targetSeries.model,
+    ])];
+    downloadCsv(`steelcost-${country.toLowerCase()}-${targetSeries.key}-${horizon}w.csv`, rows);
+    setExported(true); window.setTimeout(() => setExported(false), 2400);
   };
   const exportPdf = () => window.print();
   return (
     <>
-      <PageIntro onExportCsv={exportForecast} onExportSeries={exportSeries} onExportPdf={exportPdf} onRefresh={refreshCost} refreshing={refreshing} exported={exported} />
+      <PageIntro
+        onExportCsv={exportForecast}
+        onExportSeries={exportSeries}
+        onExportPdf={exportPdf}
+        onRefresh={refreshCost}
+        refreshing={refreshing}
+        exported={exported}
+        activeSeriesLabel={HISTORICAL_FACTORS.find((f) => f.key === selectedSeriesKey)?.label}
+      />
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
         <div className="panel flex min-h-[128px] flex-col justify-between bg-foreground p-5 text-background">
           <div>
@@ -2319,7 +2360,17 @@ function Home() {
           <div className="mb-5">
             <ChinaExportChart hrcHistory={seriesForChart.find((item) => item.key === 'hrc')?.history ?? []} />
           </div>
-          <HistoricalPricesPanel series={seriesForChart} inputs={overview.inputs} baseCost={modelBaseCost} refreshedAt={refreshedAt} onApplyScenario={applyHistoricalEvent} />
+          <HistoricalPricesPanel
+            series={seriesForChart}
+            inputs={overview.inputs}
+            baseCost={modelBaseCost}
+            refreshedAt={refreshedAt}
+            onApplyScenario={applyHistoricalEvent}
+            activeKey={selectedSeriesKey}
+            onActiveKeyChange={setSelectedSeriesKey}
+            range={historicalRange}
+            onRangeChange={setHistoricalRange}
+          />
         </div>
       )}
 
